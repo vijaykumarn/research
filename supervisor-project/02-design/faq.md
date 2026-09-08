@@ -162,3 +162,61 @@ be a short advisory claim rather than a correctness-critical distributed lock.
 run holds that `(config, window)`, NACK it for redelivery with a short delay and bounded
 retries — it comes back naturally after the scheduled run releases that config. "Processed
 promptly, no fixed SLA" makes brief waiting acceptable.
+
+> **Superseded in v08.** The `ScopeClaim` lock described here was removed — see
+> `solutions_v08.md`. Scheduled and on-demand messages already have distinct logical
+> identities, so both publish for the same `(config, window)` by design; `UQ_Outbox_Identity`
+> alone covers the only real double-publish case (a scheduled run vs. its own recovery).
+
+---
+
+## Q6. What's the difference between `DAILY` and `ONE_TIME_PER_DAY` — why not merge them into one?
+
+They are the **same cadence** — once per day. The only real difference is the **reporting-window
+rule**:
+
+| | `DAILY` (CAMT053S, CAMT053E, CAMT054D) | `ONE_TIME_PER_DAY` (CAMT054C) |
+|---|---|---|
+| Fires | 06:00, Tue–Sat | 21:00, Mon–Fri |
+| Window | the **whole previous calendar day** (00:00–24:00 of yesterday) | **midnight → the fire time** of the **same** day (00:00–21:00) |
+| Window model | `PREVIOUS_CALENDAR_DAY` | `BOUNDARY` (list `[00:00, 21:00]`) |
+
+Fire time and days are just config. The substantive split is "yesterday, complete" vs. "today
+so far, partial."
+
+**You *can* technically merge them** — the trigger is keyed by `(report_type, frequency)`, so
+`(CAMT053S, ONCE_PER_DAY)` and `(CAMT054C, ONCE_PER_DAY)` would already be different triggers
+with their own cron, days, and window model, and no single report type needs both behaviours.
+
+**But merging is not a good idea:**
+
+1. **"Window model" is not an independent axis.** Every frequency in the catalogue maps to
+   exactly one window rule (all boundary-model except `DAILY`). Today that mapping is derivable
+   from the frequency. Merging `DAILY` and `ONE_TIME_PER_DAY` *creates* a genuine, settable-wrong
+   `window-model` config field where there wasn't one — relocating complexity, not removing it.
+2. **They are different report concepts.** `DAILY` is an end-of-day report on a *completed*
+   day (statements, full-day notifications), run the next morning. `ONE_TIME_PER_DAY` is the
+   **N = 1 member of CAMT054C's intraday family** — same report type, same partial-same-day
+   semantics, same boundary model as its `FOUR_`/`EIGHT_TIMES_PER_DAY` siblings. It belongs
+   *with* them; `DAILY` belongs with nothing else.
+3. **`frequency` is a `ReportConfig` column people read.** Keep it self-describing. After a
+   merge, the same `frequency` value would mean structurally different reporting depending on
+   report type.
+4. **It composes badly.** A future third once-daily window (previous *business* day, trailing
+   24 h, …) is a new named value in the current design, versus an ever-growing `window-model`
+   enum that every once-daily trigger must set correctly.
+5. **Weaker misconfiguration guard.** `(CAMT053S, ONE_TIME_PER_DAY)` today has no matching
+   trigger → caught at startup. Merged, it's valid and correctness rests entirely on a
+   separate field being right.
+
+**Cost of keeping them separate:** one extra enum constant. No runtime cost, no schema cost
+(`frequency` is in no dedup key), no coupling.
+
+**What was worth fixing is the naming** — `DAILY` and `ONE_TIME_PER_DAY` *sounded* like
+synonyms. Resolved (applied in `scheduling.md`):
+
+- `DAILY` → **`END_OF_DAY`** — CAMT053S / 053E / 054D; reports the completed previous day.
+- `ONE_TIME_PER_DAY` → **`ONCE_PER_DAY`** — CAMT054C; the 1× member of the
+  `ONCE_ / FOUR_ / EIGHT_TIMES_PER_DAY` family, partial same-day window.
+
+Two distinct concepts, two names, no apparent overlap.
