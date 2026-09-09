@@ -180,7 +180,7 @@ double-publish case (a scheduled run vs. its own crash-recovery / a zombie origi
 Also proposed (pending confirm): the on-demand path skips-and-logs any supplied config with
 `frequency = 'NEVER'` as a cheap guard against a mistaken request. Captured in
 `solutions_v08.md`; `how-it-works.md` updated to match. Scheduling was also split into its own
-document (`scheduling.md`) at the product owner's request.
+document (`scheduling/scheduling.md`) at the product owner's request.
 
 ---
 
@@ -230,14 +230,18 @@ document (`scheduling.md`) at the product owner's request.
 - Confirm the no-cross-message-ordering contract point, and the "two semantically-equal
   messages distinguished by trigger metadata" acceptance, with the Executor team.
 - Confirm or drop the on-demand `frequency = 'NEVER'` skip-and-log guard (v08).
-- Scheduling design — converged in **`scheduling/scheduling_v02.md`**. Path: `../scheduling.md`
-  draft → `scheduling_goal.md` (clean brief) → external agent's `scheduling/scheduling_v01.md`
-  (3 options, recommended A) → bikili implementation reviewed for inspiration → **v02**. v02 =
-  Option A, generated crons, pure window function, `UNIQUE (report_type, frequency,
-  scheduled_time)` on `Run`, explicit DST policy; boundary frequencies use a single generated
-  cron (not bikili's one-trigger-per-boundary) with sequence derived by matching/snapping the
-  fire time. Deferred within it: the eight `EIGHT_TIMES_PER_DAY` times, misfire policy (needs a
-  real Quartz test), the `END_OF_DAY` fast-TEST question, DST confirmation, pause/resume in v1.
+- Scheduling design — **`scheduling/scheduling.md`** (single consolidated doc; the earlier
+  draft, the clean brief, the external agent's options pass, and the bikili review were all
+  folded in and then removed). Design: one logical schedule per `(report_type, frequency)`;
+  one `ReportSchedulingJob` class with 14 data-driven `JobDetail`s (no per-report-type
+  subclasses); crons generated from a declarative spec; boundary frequencies on a single cron
+  with the sequence derived by snapping the fire time; pure window function (rolling /
+  boundary / calendar-day) with an explicit DST rule; `UNIQUE (report_type, frequency,
+  scheduled_time)` on `Run`; `requestRecovery(false)` (the pipeline's sweeper owns recovery);
+  concurrent adjacent-window runs are intended (no `@DisallowConcurrentExecution`); manual
+  runs via `scheduler.triggerJob` + a `scheduledTimeOverride`. Open within it: misfire policy
+  (needs a real Quartz test), `EVERY_2/4_HOURS` window shape (rolling-matches-production vs
+  boundary), the eight `EIGHT_TIMES_PER_DAY` times, DST confirmation, pause/resume in v1.
 
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just

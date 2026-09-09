@@ -213,10 +213,68 @@ with their own cron, days, and window model, and no single report type needs bot
 (`frequency` is in no dedup key), no coupling.
 
 **What was worth fixing is the naming** — `DAILY` and `ONE_TIME_PER_DAY` *sounded* like
-synonyms. Resolved (applied in `scheduling.md`):
+synonyms. Resolved (applied in the scheduling design):
 
 - `DAILY` → **`END_OF_DAY`** — CAMT053S / 053E / 054D; reports the completed previous day.
 - `ONE_TIME_PER_DAY` → **`ONCE_PER_DAY`** — CAMT054C; the 1× member of the
   `ONCE_ / FOUR_ / EIGHT_TIMES_PER_DAY` family, partial same-day window.
 
 Two distinct concepts, two names, no apparent overlap.
+
+---
+
+## Q7. One `ReportSchedulingJob` class instead of one per report type — how do I run a particular job manually?
+
+**Yes, one job class**, with **one Quartz `JobDetail` per `(report_type, frequency)`** (14 of
+them), each carrying `report_type` + `frequency` + its window spec in its own `JobDataMap`. No
+per-report-type Java subclasses. The number of Java classes is orthogonal to manual
+execution — Quartz triggers a run by `JobKey`, not by class.
+
+**A manual run is `scheduler.triggerJob(JobKey)`:**
+
+```java
+scheduler.triggerJob(JobKey.jobKey("CAMT052B-EVERY_30_MIN", "camt052b-group"));
+```
+
+Runs that job now, out of band from its cron. The 14 JobDetail keys are your "run this
+particular one" handles.
+
+**This is actually easier than a class-per-report-type model.** In that model the frequency
+lives on the *trigger's* data map, so triggering the bare JobDetail fires with no frequency in
+context and the job throws. The data-driven JobDetail carries everything it needs on itself,
+so `triggerJob(key)` just runs.
+
+**Re-run a specific slot** — the job reads an optional override from its merged data map:
+
+```java
+Instant scheduledTime = data.containsKey("scheduledTimeOverride")
+    ? Instant.parse(data.getString("scheduledTimeOverride"))
+    : context.getScheduledFireTime().toInstant();
+
+JobDataMap override = new JobDataMap();
+override.put("scheduledTimeOverride", "2026-09-09T13:00:00Z");
+scheduler.triggerJob(JobKey.jobKey("CAMT052B-EVERY_1_HOUR", "camt052b-group"), override);
+```
+
+That re-runs the 13:00 slot (window 12:00–13:00) whenever you fire it. Without the override, a
+manual fire uses "now" snapped to the nearest boundary.
+
+**What you'd actually use day-to-day** — a thin admin surface wrapping `triggerJob` (a custom
+Actuator endpoint or a small authenticated `POST`):
+
+```
+POST /admin/scheduling/run
+{ "reportType": "CAMT053S", "frequency": "END_OF_DAY", "scheduledTime": "2026-09-08T06:00:00Z" }
+```
+
+→ resolves the JobKey, calls `triggerJob(key, overrideMap)`. Same one line of Quartz whether
+there is 1 job class or 6.
+
+**Where the boundary is:**
+- *"Re-run scheduled slot X"* → the manual-trigger path above. Still goes through the scheduled
+  pipeline: computes the window, creates a `Run` (deduped by
+  `UNIQUE (report_type, frequency, scheduled_time)` if that slot already succeeded), publishes.
+- *"Generate for an arbitrary historical window / a specific config-id list"* → that is the
+  **on-demand trigger's** job (it already takes a config-id list + period). Don't force an
+  arbitrary window into the scheduled job — deriving the window from the slot is its whole
+  identity.
