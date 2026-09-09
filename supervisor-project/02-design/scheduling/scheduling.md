@@ -25,9 +25,12 @@ Per firing, the job:
 
 > `report_type` · `frequency` · `scheduled_time` · `window_start` · `window_end`
 
-The pipeline creates the `Run` — guarded by `UNIQUE (report_type, frequency, scheduled_time)` —
-and pages `ReportConfig WHERE report_type = ? AND frequency = ? AND is_active = 1`, per
-`../how-it-works.md` §4.
+The pipeline creates the `Run` — guarded by `UQ_Run_ScheduledSlot`, a filtered unique index on
+`(report_type, frequency, scheduled_time)` over `SCHEDULED` rows (`../solutions_v08.md`) — and
+pages `ReportConfig WHERE report_type = ? AND frequency = ? AND is_active = 1`, per
+`../how-it-works.md` §4. `frequency` and the window are persisted on the `Run` row: one report
+type can have several frequencies (CAMT054C has three), and recovery's "keep paging" step
+needs both to know which config set to page and what window to stamp.
 
 A `Run` is single-report-type. A firing therefore always maps to **one `Run` for one report
 type**, never several — where a config entry groups report types (§6), the loader has already
@@ -75,7 +78,12 @@ Per firing, scheduling produces exactly:
 
 `report_type` (one) · `frequency` · `scheduled_time` · `window_start` · `window_end`
 
-The pipeline takes it from there.
+The pipeline takes it from there. It derives the scheduled-path outbox `execution_id`
+deterministically from these — `uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`
+(`../solutions_v08.md`) — so the same slot (recovery, a snapped misfire catch-up) dedups,
+while a genuinely distinct firing (a fast-cadence TEST tick, an un-overridden manual re-run)
+produces a fresh message. This is what lets §13's fast-cadence testing work for every
+frequency, `END_OF_DAY` included.
 
 ---
 
@@ -246,10 +254,19 @@ run must never hold back the next window's report.
 The pipeline handles this correctly with no locking:
 
 - The two `Run`s have **different `scheduled_time`** (13:00 vs 13:30), so
-  `UNIQUE (report_type, frequency, scheduled_time)` does not block them — it only blocks a
-  *duplicate* firing for the *same* slot (a misfire double-fire).
+  `UQ_Run_ScheduledSlot` does not block them — it only blocks a *duplicate* firing for the
+  *same* slot (a misfire double-fire).
 - Each run makes its own `WorkItem` rows (keyed by `run_id`) and its messages carry
   **different `window_start` / `window_end`** → different `UQ_Outbox_Identity` → both publish.
+
+**A duplicate firing for the same slot is a named success path, not a failure.** If a firing
+finds a `Run` already exists for its `(report_type, frequency, scheduled_time)`, the job
+catches the `UQ_Run_ScheduledSlot` violation, logs it, and **exits cleanly** — it does not
+throw to Quartz (a `JobExecutionException` would be recorded as a failed execution and could
+escalate to misfire/alert handling). The existing `Run` is either `COMPLETED` (idempotent
+no-op), `IN_PROGRESS` (the recovery sweeper owns it), or `ABANDONED` (the give-up alert
+already fired — re-running that slot is a manual action, §8). Same posture as
+`../solutions_v08.md`'s `Outbox` "already exists" success path.
 
 **No `@DisallowConcurrentExecution` on `ReportSchedulingJob`.** The double DB read load from
 two overlapping runs paging the same configs is accepted — the goal is a service that
@@ -330,8 +347,8 @@ If any catch-up *is* wanted for the boundary frequencies: catch up the **most re
 boundary only** (one `Run`, `(previous boundary, most-recent-missed boundary]`) — do not
 replay every missed slot; older ones are a manual/on-demand backfill. Idempotency is free: the
 catch-up's resolved `scheduled_time` and window equal what the on-time fire would have
-produced, so `UNIQUE (report_type, frequency, scheduled_time)` and `UQ_Outbox_Identity`
-reconcile it against any partial on-time run.
+produced, so `UQ_Run_ScheduledSlot` and `UQ_Outbox_Identity` reconcile it against any partial
+on-time run.
 
 **Verify with a real Quartz test** under a clustered `JDBCJobStore` — confirm what
 `getScheduledFireTime()` returns for each misfire instruction, and that §4's resolution lands
@@ -345,11 +362,14 @@ it correctly.
   a firing that fails partway still leaves a trace the recovery sweeper can act on. A firing
   that fails *before* `Run` creation (e.g. a bad config) is caught by startup validation
   (§11), not left silent.
+- The `Run` row records `frequency` and the resolved `(window_start, window_end)` — the
+  sweeper resuming a run past `last_config_id_processed` reads `frequency` to know which config
+  set to keep paging and the stored window to stamp onto new `WorkItem`s (no recompute).
 - The recovery sweeper (`../solutions_v08.md`) owns interrupted scheduled runs — heartbeat
   detection, CAS ownership, resume-from-checkpoint. Scheduling adds nothing here beyond
   creating the `Run` and letting `requestRecovery(false)` keep Quartz out of it.
-- `UNIQUE (report_type, frequency, scheduled_time)` on `Run` makes a repeated firing for the
-  same slot fail fast at `Run` creation instead of after a full resolve pass.
+- `UQ_Run_ScheduledSlot` makes a repeated firing for the same slot fail fast at `Run` creation
+  instead of after a full resolve pass; the job treats that violation as a clean no-op (§7).
 
 ---
 
@@ -370,9 +390,11 @@ At startup, fail loud (or alert) on:
 
 ## 12. OPEN decision — `EVERY_2_HOURS` / `EVERY_4_HOURS` window shape
 
-Current production does **not** cover 00:00 → first fire for these two (first fire at
-03:00 / 05:00 → window `01:00–03:00` / `01:00–05:00`; midnight to 01:00 is unreported each
-day). CAMT054C's boundary frequencies *do* cover midnight (first window `00:00 → first
+The initial framing of this design assumed a midnight-anchored first window for these two
+(`00:00 → 03:00` / `00:00 → 05:00`). **Checking the current production system during this pass
+showed it does *not* do that** — first fire at 03:00 / 05:00 → window `01:00–03:00` /
+`01:00–05:00`; midnight to 01:00 is unreported each day. So this is now genuinely open rather
+than settled. CAMT054C's boundary frequencies *do* cover midnight (first window `00:00 → first
 boundary`), so production is already inconsistent between the two families.
 
 - **Match production** → `shape = ROLLING` for these two. Simpler: all four `EVERY_*` share
@@ -386,23 +408,22 @@ Business query outstanding. The config's `shape` field makes flipping this a one
 
 ## 13. Testing on a fast cadence
 
-For every frequency except `END_OF_DAY`, give the TEST profile a **dense spec** —
-`interval = { first: 00:00, step: 2m, last: 23:58 }` or a dense `boundaries` list. The loader
-generates a matching fast cron; every fire is a fresh window with fresh messages.
-`cron-override` is the alternative for raw cron control, but firing faster than the real
-boundaries only produces the first message per window (the pipeline dedups the rest via
-`UQ_Outbox_Identity`).
+Give the TEST profile a **dense spec** — `interval = { first: 00:00, step: 2m, last: 23:58 }`
+or a dense `boundaries` list, or a `cron-override` — and every fire produces a fresh message.
 
-**`END_OF_DAY` cannot be made to produce fresh reports on a fast cadence** while it stays
-`CALENDAR_DAY` — its window is a function of the date alone, so repeat fires within a day are
-pipeline no-ops. In order of preference:
+This works for **every frequency, including `END_OF_DAY`**, because a scheduled outbox row's
+`execution_id` is derived from its `scheduled_time`
+(`uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`, `../solutions_v08.md`). Each
+tick of a fast cron has a distinct `scheduled_time` → a distinct `execution_id` → a new
+`UQ_Outbox_Identity`, so a fresh message is published even when the *window* is identical.
 
-1. **On-demand path** — an on-demand request with `period = <any date>` produces a fresh
-   message for CAMT053S/053E/054D every call, exercising resolve → assemble → publish. Does
-   not exercise scheduling's (trivial) previous-calendar-day arithmetic.
-2. In TEST, point the `END_OF_DAY` schedule at `shape = BOUNDARY` with a dense `interval` —
-   fast fresh windows through the scheduled path, at the cost of not testing the real
-   calendar-day rule.
+- For rolling / boundary frequencies the window also advances, so this is doubly fresh.
+- For `END_OF_DAY` the window stays "yesterday 00:00–24:00" on every tick, but the message is
+  still new each time — you can fire it every 15 minutes in TEST and get a full round-trip to
+  Executor on each fire.
+
+Production is unaffected: `END_OF_DAY` fires once a day, and crash recovery / misfire catch-ups
+reuse the slot's `scheduled_time` (so the same `execution_id`) and dedup normally.
 
 ---
 

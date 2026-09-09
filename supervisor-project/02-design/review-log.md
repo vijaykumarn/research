@@ -171,16 +171,40 @@ Three constraints confirmed by the product owner, which **removed** machinery ra
 - Executor accepts two semantically-equal messages as long as trigger metadata distinguishes
   them.
 
-**Change:** the **`ScopeClaim` table and its `MERGE`/`HOLDLOCK` acquire are removed.** By v07,
-scheduled and on-demand messages already had distinct logical identities (sentinel vs. real
-`execution_id`), so they never collided on `UQ_Outbox_Identity` and both published by design —
-`ScopeClaim` only ever made one trigger *wait* for the other, contrary to the confirmed
-intent. `UQ_Outbox_Identity` alone remains and independently covers the only real
-double-publish case (a scheduled run vs. its own crash-recovery / a zombie original pod).
+**Change 1 — `ScopeClaim` removed.** The **`ScopeClaim` table and its `MERGE`/`HOLDLOCK`
+acquire are gone.** Scheduled and on-demand messages already have distinct outbox identities,
+so they never collide on `UQ_Outbox_Identity` and both publish by design — `ScopeClaim` only
+ever made one trigger *wait* for the other, contrary to the confirmed intent. `UQ_Outbox_Identity`
+alone remains and independently covers the only real double-publish case (a scheduled run vs.
+its own crash-recovery / a zombie original pod).
+
+**Change 2 — scheduled `execution_id` is derived, not a sentinel.** Earlier drafts gave every
+scheduled-path outbox row an all-zeros `execution_id`; it is now
+`uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`. The same slot (crash
+recovery, a snapped misfire catch-up — both reuse `scheduled_time`) still yields the same id
+and dedups; a genuinely distinct firing (a fast-cadence TEST tick, an un-overridden manual
+re-run) yields a distinct id and a fresh message. This removes the `END_OF_DAY` fast-TEST
+limitation entirely — `END_OF_DAY` can now be fired every few minutes in TEST and produce a
+full round-trip on each fire, even though its window ("yesterday 00:00–24:00") never changes.
+Production is unaffected (`END_OF_DAY` fires once a day). Consistent with on-demand/PHT, where
+`execution_id` already means "which execution produced this."
+
+**Change 3 — `Run` schema fix (from a review of `scheduling/scheduling.md`).** The scheduling
+design leaned on `UNIQUE (report_type, frequency, scheduled_time)` on `Run`, but the `Run` DDL
+had no `frequency` column and no such index. Added to `solutions_v08.md`: `frequency
+VARCHAR(20) NULL` (with `CK_Run_Frequency_Required` for `SCHEDULED`), `window_start` /
+`window_end DATETIME2 NOT NULL` (frozen at creation, so recovery's "keep paging" needs no
+recompute and a later window-function change can't alter an in-flight run), and
+`UQ_Run_ScheduledSlot` as a **filtered** unique index over `SCHEDULED` rows only — a plain
+constraint would wrongly block a legitimate on-demand re-request. Also stated: `Run` creation
+hitting that index is a **named success path** (catch, log, exit the job cleanly — no
+`JobExecutionException`), mirroring the `Outbox` "already exists" path.
+
 Also proposed (pending confirm): the on-demand path skips-and-logs any supplied config with
 `frequency = 'NEVER'` as a cheap guard against a mistaken request. Captured in
-`solutions_v08.md`; `how-it-works.md` updated to match. Scheduling was also split into its own
-document (`scheduling/scheduling.md`) at the product owner's request.
+`solutions_v08.md`; `how-it-works.md` and `scheduling/scheduling.md` updated to match.
+Scheduling was also split into its own document (`scheduling/scheduling.md`) at the product
+owner's request.
 
 ---
 

@@ -272,8 +272,8 @@ there is 1 job class or 6.
 
 **Where the boundary is:**
 - *"Re-run scheduled slot X"* → the manual-trigger path above. Still goes through the scheduled
-  pipeline: computes the window, creates a `Run` (deduped by
-  `UNIQUE (report_type, frequency, scheduled_time)` if that slot already succeeded), publishes.
+  pipeline: computes the window, creates a `Run` (deduped by `UQ_Run_ScheduledSlot` if that
+  slot already succeeded — a clean no-op), publishes.
 - *"Generate for an arbitrary historical window / a specific config-id list"* → that is the
   **on-demand trigger's** job (it already takes a config-id list + period). Don't force an
   arbitrary window into the scheduled job — deriving the window from the slot is its whole
