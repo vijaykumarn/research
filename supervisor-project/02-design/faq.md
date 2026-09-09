@@ -1,6 +1,6 @@
 # Commander Redesign — FAQ
 
-Plain-language explanations of points raised in `goal.md`. Kept here so the reasoning isn't lost.
+Plain-language explanations of points raised in `message-pipeline/goal.md`. Kept here so the reasoning isn't lost.
 
 ---
 
@@ -164,7 +164,7 @@ retries — it comes back naturally after the scheduled run releases that config
 promptly, no fixed SLA" makes brief waiting acceptable.
 
 > **Superseded in v08.** The `ScopeClaim` lock described here was removed — see
-> `solutions_v08.md`. Scheduled and on-demand messages already have distinct logical
+> `message-pipeline/solution_v08.md`. Scheduled and on-demand messages already have distinct logical
 > identities, so both publish for the same `(config, window)` by design; `UQ_Outbox_Identity`
 > alone covers the only real double-publish case (a scheduled run vs. its own recovery).
 

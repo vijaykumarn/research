@@ -2,7 +2,7 @@
 
 How the **scheduled** trigger decides *when* each report runs and *what reporting window* a
 firing represents, then hands off to the message-production pipeline
-(`../how-it-works.md` / `../solutions_v08.md`). Scheduling owns nothing after a `Run` is
+(`../message-pipeline/how-it-works.md` / `../message-pipeline/solution_v08.md`). Scheduling owns nothing after a `Run` is
 created.
 
 **In scope:** cadences, the reporting-window rules, wiring to Quartz, the deploy-time config
@@ -26,9 +26,9 @@ Per firing, the job:
 > `report_type` · `frequency` · `scheduled_time` · `window_start` · `window_end`
 
 The pipeline creates the `Run` — guarded by `UQ_Run_ScheduledSlot`, a filtered unique index on
-`(report_type, frequency, scheduled_time)` over `SCHEDULED` rows (`../solutions_v08.md`) — and
+`(report_type, frequency, scheduled_time)` over `SCHEDULED` rows (`../message-pipeline/solution_v08.md`) — and
 pages `ReportConfig WHERE report_type = ? AND frequency = ? AND is_active = 1`, per
-`../how-it-works.md` §4. `frequency` and the window are persisted on the `Run` row: one report
+`../message-pipeline/how-it-works.md` §4. `frequency` and the window are persisted on the `Run` row: one report
 type can have several frequencies (CAMT054C has three), and recovery's "keep paging" step
 needs both to know which config set to page and what window to stamp.
 
@@ -61,7 +61,7 @@ single configured business timezone. Business day = Mon–Fri, no holiday calend
 - **`EVERY_2_HOURS` / `EVERY_4_HOURS`** — shape is an **open decision** (§12). Rolling matches
   current production (00:00 → first fire is not covered); boundary anchors the first window to
   midnight.
-- **`NEVER`** is the PHT-only marker (`../solutions_v08.md`) — the config exists so the PHT
+- **`NEVER`** is the PHT-only marker (`../message-pipeline/solution_v08.md`) — the config exists so the PHT
   flow can resolve it; no scheduled trigger ever selects it. The scheduled selection predicate
   (`frequency = ?`) structurally excludes it.
 - The 21:00 firing exists in all three CAMT054C cadences with a **different window each**; a
@@ -80,7 +80,7 @@ Per firing, scheduling produces exactly:
 
 The pipeline takes it from there. It derives the scheduled-path outbox `execution_id`
 deterministically from these — `uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`
-(`../solutions_v08.md`) — so the same slot (recovery, a snapped misfire catch-up) dedups,
+(`../message-pipeline/solution_v08.md`) — so the same slot (recovery, a snapped misfire catch-up) dedups,
 while a genuinely distinct firing (a fast-cadence TEST tick, an un-overridden manual re-run)
 produces a fresh message. This is what lets §13's fast-cadence testing work for every
 frequency, `END_OF_DAY` included.
@@ -159,7 +159,7 @@ loop (14 total), each in its report type's group (e.g. `camt052b-group`).
 
 - `storeDurably(true)`.
 - `requestRecovery(false)` — **the pipeline's own recovery owns interrupted runs** (heartbeat
-  + stale-`Run` sweeper, `../solutions_v08.md`). Quartz's `requestRecovery` re-fires the
+  + stale-`Run` sweeper, `../message-pipeline/solution_v08.md`). Quartz's `requestRecovery` re-fires the
   *trigger* (a fresh firing); the sweeper resumes the *specific `Run`* from its checkpoint.
   Two overlapping mechanisms would race — use only the sweeper.
 
@@ -266,7 +266,7 @@ throw to Quartz (a `JobExecutionException` would be recorded as a failed executi
 escalate to misfire/alert handling). The existing `Run` is either `COMPLETED` (idempotent
 no-op), `IN_PROGRESS` (the recovery sweeper owns it), or `ABANDONED` (the give-up alert
 already fired — re-running that slot is a manual action, §8). Same posture as
-`../solutions_v08.md`'s `Outbox` "already exists" success path.
+`../message-pipeline/solution_v08.md`'s `Outbox` "already exists" success path.
 
 **No `@DisallowConcurrentExecution` on `ReportSchedulingJob`.** The double DB read load from
 two overlapping runs paging the same configs is accepted — the goal is a service that
@@ -365,7 +365,7 @@ it correctly.
 - The `Run` row records `frequency` and the resolved `(window_start, window_end)` — the
   sweeper resuming a run past `last_config_id_processed` reads `frequency` to know which config
   set to keep paging and the stored window to stamp onto new `WorkItem`s (no recompute).
-- The recovery sweeper (`../solutions_v08.md`) owns interrupted scheduled runs — heartbeat
+- The recovery sweeper (`../message-pipeline/solution_v08.md`) owns interrupted scheduled runs — heartbeat
   detection, CAS ownership, resume-from-checkpoint. Scheduling adds nothing here beyond
   creating the `Run` and letting `requestRecovery(false)` keep Quartz out of it.
 - `UQ_Run_ScheduledSlot` makes a repeated firing for the same slot fail fast at `Run` creation
@@ -413,7 +413,7 @@ or a dense `boundaries` list, or a `cron-override` — and every fire produces a
 
 This works for **every frequency, including `END_OF_DAY`**, because a scheduled outbox row's
 `execution_id` is derived from its `scheduled_time`
-(`uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`, `../solutions_v08.md`). Each
+(`uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`, `../message-pipeline/solution_v08.md`). Each
 tick of a fast cron has a distinct `scheduled_time` → a distinct `execution_id` → a new
 `UQ_Outbox_Identity`, so a fresh message is published even when the *window* is identical.
 

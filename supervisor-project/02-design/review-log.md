@@ -7,7 +7,7 @@ so the reasoning behind the final shape survives outside the chat transcript.
 
 ## Starting point
 
-**`goal.md`** — a lean brief: purpose (generate CAMT report messages, publish JSON
+**`message-pipeline/goal.md`** — a lean brief: purpose (generate CAMT report messages, publish JSON
 `ReportMessage` to one IBM MQ queue per report type; a downstream Executor renders the actual
 reports), six report types, three inbound triggers (scheduled / on-demand / PHT), fixed
 constraints (Spring Boot, IBM MQ, SQL Server, Quartz), multi-pod deployment where any pod can
@@ -189,9 +189,9 @@ full round-trip on each fire, even though its window ("yesterday 00:00–24:00")
 Production is unaffected (`END_OF_DAY` fires once a day). Consistent with on-demand/PHT, where
 `execution_id` already means "which execution produced this."
 
-**Change 3 — `Run` schema fix (from a review of `scheduling/scheduling.md`).** The scheduling
+**Change 3 — `Run` schema fix (from a review of `scheduling/solution_v01.md`).** The scheduling
 design leaned on `UNIQUE (report_type, frequency, scheduled_time)` on `Run`, but the `Run` DDL
-had no `frequency` column and no such index. Added to `solutions_v08.md`: `frequency
+had no `frequency` column and no such index. Added to `message-pipeline/solution_v08.md`: `frequency
 VARCHAR(20) NULL` (with `CK_Run_Frequency_Required` for `SCHEDULED`), `window_start` /
 `window_end DATETIME2 NOT NULL` (frozen at creation, so recovery's "keep paging" needs no
 recompute and a later window-function change can't alter an in-flight run), and
@@ -202,8 +202,8 @@ hitting that index is a **named success path** (catch, log, exit the job cleanly
 
 Also proposed (pending confirm): the on-demand path skips-and-logs any supplied config with
 `frequency = 'NEVER'` as a cheap guard against a mistaken request. Captured in
-`solutions_v08.md`; `how-it-works.md` and `scheduling/scheduling.md` updated to match.
-Scheduling was also split into its own document (`scheduling/scheduling.md`) at the product
+`message-pipeline/solution_v08.md`; `message-pipeline/how-it-works.md` and `scheduling/solution_v01.md` updated to match.
+Scheduling was also split into its own document (`scheduling/solution_v01.md`) at the product
 owner's request.
 
 ---
@@ -254,7 +254,7 @@ owner's request.
 - Confirm the no-cross-message-ordering contract point, and the "two semantically-equal
   messages distinguished by trigger metadata" acceptance, with the Executor team.
 - Confirm or drop the on-demand `frequency = 'NEVER'` skip-and-log guard (v08).
-- Scheduling design — **`scheduling/scheduling.md`** (single consolidated doc; the earlier
+- Scheduling design — **`scheduling/solution_v01.md`** (single consolidated doc; the earlier
   draft, the clean brief, the external agent's options pass, and the bikili review were all
   folded in and then removed). Design: one logical schedule per `(report_type, frequency)`;
   one `ReportSchedulingJob` class with 14 data-driven `JobDetail`s (no per-report-type

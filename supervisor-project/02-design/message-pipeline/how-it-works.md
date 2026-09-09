@@ -3,7 +3,7 @@
 This explains what the application actually *does*, step by step, and why it's built that way.
 No schema detail — just the mechanism. Reflects the **v08** design. Scheduling (which report
 type runs how often, and the reporting-window rules) is a separate concern — see
-`scheduling/scheduling.md`.
+`../scheduling/solution_v01.md`.
 
 ---
 
@@ -230,4 +230,4 @@ and doesn't fit the event-driven on-demand / PHT triggers).
 - how long to keep `ProcessedInboundMessage` ids (from the MQ redelivery / backout settings)
 - confirming with the Executor team that they will dedupe on the message fingerprint, and that
   they accept two semantically-equal messages distinguished only by trigger metadata
-- the scheduling design itself — covered separately in `scheduling/scheduling.md`
+- the scheduling design itself — covered separately in `../scheduling/solution_v01.md`
