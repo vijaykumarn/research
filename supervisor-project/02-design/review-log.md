@@ -263,9 +263,13 @@ owner's request.
   boundary / calendar-day) with an explicit DST rule; `UNIQUE (report_type, frequency,
   scheduled_time)` on `Run`; `requestRecovery(false)` (the pipeline's sweeper owns recovery);
   concurrent adjacent-window runs are intended (no `@DisallowConcurrentExecution`); manual
-  runs via `scheduler.triggerJob` + a `scheduledTimeOverride`. Open within it: misfire policy
-  (needs a real Quartz test), `EVERY_2/4_HOURS` window shape (rolling-matches-production vs
-  boundary), the eight `EIGHT_TIMES_PER_DAY` times, DST confirmation, pause/resume in v1.
+  runs and missed-slot backfill via `scheduler.triggerJob` + a `scheduledTimeOverride`.
+  **Decided since:** misfire policy is **do nothing** — no automatic catch-up, missed slots
+  backfilled by explicit manual trigger; `EVERY_2/4_HOURS` are **boundary**-shaped with the
+  first window anchored to `00:00` (a deliberate divergence from the legacy system's rolling
+  behaviour — parity note for cutover). Open within it: the eight `EIGHT_TIMES_PER_DAY` times,
+  DST confirmation, generated-vs-hand-written cron, pause/resume in v1, and a Quartz test that
+  `MISFIRE_INSTRUCTION_DO_NOTHING` skips a missed firing cleanly.
 
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just

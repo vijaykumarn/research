@@ -47,8 +47,8 @@ single configured business timezone. Business day = Mon–Fri, no holiday calend
 |---|---|---|---|---|---|
 | CAMT052B, CAMT052BT | `EVERY_30_MIN` | rolling | every 30 min, 00:30 → 21:00 | Mon–Fri | `fire − 30 min → fire` |
 | CAMT052B, CAMT052BT | `EVERY_1_HOUR` | rolling | hourly, 01:00 → 21:00 | Mon–Fri | `fire − 1 h → fire` |
-| CAMT052B, CAMT052BT | `EVERY_2_HOURS` | rolling *or* boundary — see §12 | 03:00, 05:00 … 21:00 | Mon–Fri | rolling `fire − 2 h → fire`, **or** boundary with first window `00:00 → 03:00` |
-| CAMT052B, CAMT052BT | `EVERY_4_HOURS` | rolling *or* boundary — see §12 | 05:00, 09:00, 13:00, 17:00, 21:00 | Mon–Fri | rolling `fire − 4 h → fire`, **or** boundary with first window `00:00 → 05:00` |
+| CAMT052B, CAMT052BT | `EVERY_2_HOURS` | boundary | 03:00, 05:00 … 21:00 | Mon–Fri | previous boundary → this; **first window 00:00 → 03:00** (3 h) |
+| CAMT052B, CAMT052BT | `EVERY_4_HOURS` | boundary | 05:00, 09:00, 13:00, 17:00, 21:00 | Mon–Fri | previous boundary → this; **first window 00:00 → 05:00** (5 h) |
 | CAMT054C | `ONCE_PER_DAY` | boundary | 21:00 | Mon–Fri | 00:00 → 21:00, same day |
 | CAMT054C | `FOUR_TIMES_PER_DAY` | boundary | 10:00, 13:00, 18:00, 21:00 | Mon–Fri | previous boundary → this; first = 00:00 → 10:00 |
 | CAMT054C | `EIGHT_TIMES_PER_DAY` | boundary | 8 configurable times, last = 21:00 | Mon–Fri | previous boundary → this; first = 00:00 → first time |
@@ -58,9 +58,10 @@ single configured business timezone. Business day = Mon–Fri, no holiday calend
 - **`EVERY_30_MIN` / `EVERY_1_HOUR` are rolling.** Cheap, and rolling coincides with
   midnight-anchoring for these two — the first fire of the day is exactly one interval past
   midnight.
-- **`EVERY_2_HOURS` / `EVERY_4_HOURS`** — shape is an **open decision** (§12). Rolling matches
-  current production (00:00 → first fire is not covered); boundary anchors the first window to
-  midnight.
+- **`EVERY_2_HOURS` / `EVERY_4_HOURS` are boundary** (decided — §12). The first window of the
+  day starts at **00:00**, so midnight → first fire is covered. This is a **deliberate change
+  from the legacy system**, which leaves 00:00 → 01:00 unreported for these two — a parity
+  note for cutover.
 - **`NEVER`** is the PHT-only marker (`../message-pipeline/solution_v08.md`) — the config exists so the PHT
   flow can resolve it; no scheduled trigger ever selects it. The scheduled selection predicate
   (`frequency = ?`) structurally excludes it.
@@ -80,10 +81,10 @@ Per firing, scheduling produces exactly:
 
 The pipeline takes it from there. It derives the scheduled-path outbox `execution_id`
 deterministically from these — `uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`
-(`../message-pipeline/solution_v08.md`) — so the same slot (recovery, a snapped misfire catch-up) dedups,
-while a genuinely distinct firing (a fast-cadence TEST tick, an un-overridden manual re-run)
-produces a fresh message. This is what lets §13's fast-cadence testing work for every
-frequency, `END_OF_DAY` included.
+(`../message-pipeline/solution_v08.md`) — so the same slot (crash recovery, or a manual
+backfill that passes that slot's time) dedups, while a genuinely distinct firing (a
+fast-cadence TEST tick, an un-overridden manual re-run) produces a fresh message. This is what
+lets §13's fast-cadence testing work for every frequency, `END_OF_DAY` included.
 
 ---
 
@@ -96,7 +97,7 @@ shapes.
 
 `end = scheduled fire time`, `start = end − interval`. No boundary list, no sequence.
 
-### Boundary — `ONCE_PER_DAY`, `FOUR_TIMES_PER_DAY`, `EIGHT_TIMES_PER_DAY` (and `EVERY_2/4_HOURS` if §12 lands on boundary)
+### Boundary — `EVERY_2_HOURS`, `EVERY_4_HOURS`, `ONCE_PER_DAY`, `FOUR_TIMES_PER_DAY`, `EIGHT_TIMES_PER_DAY`
 
 The frequency's ordered boundary list, with an implicit `00:00` prepended:
 
@@ -112,11 +113,12 @@ The frequency's ordered boundary list, with an implicit `00:00` prepended:
 
 1. Take the scheduled fire time; convert to a local `(date, time)` in the business zone.
 2. Find the largest real boundary `b` with `b ≤ time`.
-   - Normal firing: `time` equals a boundary exactly.
-   - Off-grid firing (a misfire whose scheduled time isn't a boundary): `b` is the most recent
-     boundary before it, within a small tolerance (e.g. ±2 min). If `time` is not plausibly
-     attributable to a boundary, or `b` resolves to the implicit leading `00:00` → **log and
-     skip** (no `Run` created).
+   - Normal firing: `time` equals a boundary exactly. Under the do-nothing misfire policy (§9),
+     this is the only way an *automatic* firing ever arrives.
+   - Off-grid `time` (only reachable via a manual trigger with an odd `scheduledTimeOverride`):
+     `b` is the most recent boundary before it, within a small tolerance (e.g. ±2 min). If
+     `time` is not plausibly attributable to a boundary, or `b` resolves to the implicit
+     leading `00:00` → **log and skip** (no `Run` created).
 3. `window = (previous boundary, b]`, resolved against `date`. The first real boundary of the
    day → `window_start = 00:00`.
 4. `scheduled_time = b` on `date`.
@@ -127,8 +129,9 @@ The frequency's ordered boundary list, with an implicit `00:00` prepended:
 ### Calendar-day — `END_OF_DAY`
 
 `scheduled_time` = the 06:00 fire instant. `window` = `00:00` to `24:00` (business zone) of
-the **calendar day before** `scheduled_time`'s local date. A late (misfired) `END_OF_DAY`
-firing uses its *scheduled* 06:00 date, so the covered day is unchanged.
+the **calendar day before** `scheduled_time`'s local date. A backfill for a missed
+`END_OF_DAY` (§8) passes that date's 06:00 as `scheduledTimeOverride`, so it covers exactly
+the calendar day it would have on time.
 
 ### Daylight saving
 
@@ -212,8 +215,9 @@ commander.scheduling.timezone = <business zone>
 commander.scheduling.triggers[0].report-types  = CAMT052B, CAMT052BT
 commander.scheduling.triggers[0].frequency      = EVERY_2_HOURS
 commander.scheduling.triggers[0].days           = MON-FRI
-commander.scheduling.triggers[0].shape          = ROLLING          # ROLLING | BOUNDARY | CALENDAR_DAY
+commander.scheduling.triggers[0].shape          = BOUNDARY         # ROLLING | BOUNDARY | CALENDAR_DAY
 commander.scheduling.triggers[0].interval       = { first: 03:00, step: 2h, last: 21:00 }
+                                                 # implicit leading 00:00 → first window is 00:00–03:00
 
 # explicit boundary-list form
 commander.scheduling.triggers[4].report-types   = CAMT054C
@@ -319,40 +323,62 @@ POST /admin/scheduling/run
 
 → resolves the JobKey, calls `triggerJob(key, overrideMap)`.
 
-**Boundary with the on-demand path:** *"re-run scheduled slot X"* is the manual-trigger path
-above (still goes through the scheduled pipeline — window computed, `Run` created and deduped,
-publish). *"Generate for an arbitrary historical window or a specific config-id list"* is the
-**on-demand trigger's** job — don't force an arbitrary window into the scheduled job.
+### Backfilling missed slots
+
+Because the misfire policy is **do-nothing** (§9), a firing missed while the cluster was down
+is *never* recovered automatically — it is backfilled by an explicit manual trigger. Each
+backfill is just a manual run (above) with `scheduledTimeOverride` set to the missed slot's
+time, so the window function resolves it exactly as if it had fired on time.
+
+For **several** missed slots, a small batch endpoint takes either an explicit list of slot
+times, or a `(from, to)` range that it expands into that frequency's boundaries within the
+range:
+
+```
+POST /admin/scheduling/backfill
+{ "reportType": "CAMT054C", "frequency": "FOUR_TIMES_PER_DAY",
+  "from": "2026-09-10T00:00:00Z", "to": "2026-09-10T18:30:00Z" }
+```
+
+→ expands to the boundaries in `[from, to]` (10:00, 13:00, 18:00), fires **one job per
+boundary**, each with its own `scheduledTimeOverride`. Every backfill produces an independent
+`Run` for its slot and is fully idempotent — `UQ_Run_ScheduledSlot` makes a re-issued backfill
+for a slot that already ran a clean no-op. `END_OF_DAY` backfill is a single slot: the missed
+date's 06:00.
+
+**Boundary with the on-demand path:** *"re-run scheduled slot X"* / *"backfill missed slots"*
+is the manual-trigger path above (still goes through the scheduled pipeline — window computed
+from the slot, `Run` created and deduped, publish). *"Generate for an arbitrary historical
+window or a specific config-id list"* is the **on-demand trigger's** job — don't force an
+arbitrary window into the scheduled job.
 
 ---
 
-## 9. Misfire — OPEN decision
+## 9. Misfire — decided: do nothing
 
-The policy value is a business decision. Mechanism and recommendation recorded.
+**`MISFIRE_INSTRUCTION_DO_NOTHING` on every scheduled trigger, all frequencies.** If the
+whole cluster was down across a firing, that slot is **skipped entirely** — no automatic
+catch-up, ever. The trigger simply resumes at its next natural scheduled time and produces
+that window normally.
 
-**Recommendation:** `MISFIRE_INSTRUCTION_DO_NOTHING` on the sub-daily frequencies — if the
-cluster was down across a firing, skip that slot and resume at the next boundary. Losing 30
-minutes (or up to a few hours) of one window is cheap; the next firing produces the next
-window normally. This keeps the design simple: only on-grid firings ever happen, so §4's
-sequence resolution is exact and the off-grid guard is purely defensive.
+Consequences, all accepted:
 
-**`END_OF_DAY` / `ONCE_PER_DAY` need a separate answer.** `DO_NOTHING` there means a whole
-day's report is never produced because the cluster blipped at 06:00. Options:
-`MISFIRE_INSTRUCTION_FIRE_ONCE_NOW` (fire once late — the window is still correct because
-`END_OF_DAY` uses the *scheduled* date, not the fire time), or `DO_NOTHING` plus a separate
-"was today's `END_OF_DAY` run produced?" check that alerts, with a manual re-run (§8) or an
-on-demand backfill as the remedy.
+- Sub-daily reports lose one window (30 min to a few hours). The next firing is close behind.
+- **`END_OF_DAY` / `ONCE_PER_DAY` lose a whole day's report** if the cluster is down across
+  06:00 / 21:00. Recommended (not required): an alert — *"no `END_OF_DAY` run recorded for
+  date D"* — so an operator knows to backfill it manually (§8).
+- Any missed slot — including a full day's `END_OF_DAY` — is recovered **only** by an explicit
+  manual / batch backfill (§8, *Backfilling missed slots*). Backfills carry the missed slot
+  time as `scheduledTimeOverride`, so the window is identical to what the on-time firing would
+  have produced, and `UQ_Run_ScheduledSlot` keeps them idempotent.
 
-If any catch-up *is* wanted for the boundary frequencies: catch up the **most recent missed
-boundary only** (one `Run`, `(previous boundary, most-recent-missed boundary]`) — do not
-replay every missed slot; older ones are a manual/on-demand backfill. Idempotency is free: the
-catch-up's resolved `scheduled_time` and window equal what the on-time fire would have
-produced, so `UQ_Run_ScheduledSlot` and `UQ_Outbox_Identity` reconcile it against any partial
-on-time run.
+Design payoff: because only on-grid firings ever happen, §4's sequence resolution is always an
+exact boundary match; the off-grid snap/skip guard is purely defensive (it only fires if a
+manual trigger passes an odd `scheduledTimeOverride`).
 
-**Verify with a real Quartz test** under a clustered `JDBCJobStore` — confirm what
-`getScheduledFireTime()` returns for each misfire instruction, and that §4's resolution lands
-it correctly.
+**Verify with a real Quartz test** under a clustered `JDBCJobStore` that
+`MISFIRE_INSTRUCTION_DO_NOTHING` on a `CronTrigger` skips the missed firing cleanly and the
+next scheduled fire is unaffected.
 
 ---
 
@@ -388,21 +414,21 @@ At startup, fail loud (or alert) on:
 
 ---
 
-## 12. OPEN decision — `EVERY_2_HOURS` / `EVERY_4_HOURS` window shape
+## 12. `EVERY_2_HOURS` / `EVERY_4_HOURS` window shape — decided: boundary
 
-The initial framing of this design assumed a midnight-anchored first window for these two
-(`00:00 → 03:00` / `00:00 → 05:00`). **Checking the current production system during this pass
-showed it does *not* do that** — first fire at 03:00 / 05:00 → window `01:00–03:00` /
-`01:00–05:00`; midnight to 01:00 is unreported each day. So this is now genuinely open rather
-than settled. CAMT054C's boundary frequencies *do* cover midnight (first window `00:00 → first
-boundary`), so production is already inconsistent between the two families.
+**Decision: `shape = BOUNDARY`, midnight-anchored.** The first window of the day is
+`00:00 → 03:00` (2 h freq) and `00:00 → 05:00` (4 h freq); every later firing is
+previous-boundary → this-boundary as normal.
 
-- **Match production** → `shape = ROLLING` for these two. Simpler: all four `EVERY_*` share
-  one model, no boundary special-case.
-- **Close the gap** → `shape = BOUNDARY` with an implicit leading `00:00`, giving first
-  windows `00:00–03:00` / `00:00–05:00`.
+**Parity note for cutover.** The legacy system runs these two as a rolling look-back, so its
+first window is `01:00 → 03:00` / `01:00 → 05:00` and **00:00 → 01:00 is not reported** each
+day. Commander deliberately closes that gap. This also brings `EVERY_2/4_HOURS` in line with
+CAMT054C's boundary frequencies, which already cover from midnight — removing an
+inconsistency the legacy system carries between the two families.
 
-Business query outstanding. The config's `shape` field makes flipping this a one-line change.
+Fire times are unchanged (03:00, 05:00 … 21:00 and 05:00, 09:00, 13:00, 17:00, 21:00), so the
+generated crons in §5 are unaffected; only the window computation moves from rolling to
+boundary.
 
 ---
 
@@ -422,7 +448,7 @@ tick of a fast cron has a distinct `scheduled_time` → a distinct `execution_id
   still new each time — you can fire it every 15 minutes in TEST and get a full round-trip to
   Executor on each fire.
 
-Production is unaffected: `END_OF_DAY` fires once a day, and crash recovery / misfire catch-ups
+Production is unaffected: `END_OF_DAY` fires once a day, and crash recovery / a manual backfill
 reuse the slot's `scheduled_time` (so the same `execution_id`) and dedup normally.
 
 ---
@@ -457,8 +483,14 @@ Native Quartz, no new state:
 
 ## 16. Open decisions
 
-- **§9 misfire policy** — deferred; recommendation recorded; needs a real Quartz test.
-- **§12 `EVERY_2/4_HOURS` window shape** — pending a business answer.
 - The eight fire times for CAMT054C `EIGHT_TIMES_PER_DAY` — a config value, TBD.
 - DST gap/overlap policy (§4) — a proposal here; confirm with the business.
 - Whether pause/resume (§14) ships in v1.
+- Generated crons vs. a hand-written `cron` field in config (§5, §6) — recommendation is
+  "generate"; still under discussion.
+
+**Recently decided (§9, §12):** misfire policy is **do nothing** — a missed firing is skipped
+and only recovered by an explicit manual/batch backfill (§8). `EVERY_2_HOURS` / `EVERY_4_HOURS`
+are **boundary**-shaped, first window anchored to `00:00` (a deliberate change from legacy).
+Remaining implementation check: a Quartz test that `MISFIRE_INSTRUCTION_DO_NOTHING` skips a
+missed `CronTrigger` firing cleanly.

@@ -61,7 +61,9 @@ first run of the day reaches back to 00:00.
 - 21:00 run → covers 18:00–21:00.
 
 Used for the "N times a day" notification reports (`FOUR_TIMES_PER_DAY`,
-`EIGHT_TIMES_PER_DAY`, `ONCE_PER_DAY`).
+`EIGHT_TIMES_PER_DAY`, `ONCE_PER_DAY`) **and, now, the every-2-hours / every-4-hours intraday
+reports** — so their first run of the day covers from midnight (00:00–03:00 / 00:00–05:00),
+not from an hour in.
 
 ### Shape 3 — Calendar-day ("all of yesterday")
 
@@ -80,7 +82,7 @@ CAMT054D).
 | Report type(s) | Frequency | Shape | Runs | Covers |
 |---|---|---|---|---|
 | CAMT052B, CAMT052BT | Every 30 min / hourly | Rolling | 00:30–21:00, weekdays | the last 30 min / 60 min |
-| CAMT052B, CAMT052BT | Every 2 h / every 4 h | *(see §9 — open)* | from 03:00 / 05:00 to 21:00, weekdays | either "the last 2 h / 4 h" or "since the previous checkpoint" |
+| CAMT052B, CAMT052BT | Every 2 h / every 4 h | Boundary | from 03:00 / 05:00 to 21:00, weekdays | since the previous checkpoint; first run of the day covers from midnight |
 | CAMT054C | Once a day | Boundary | 21:00, weekdays | 00:00–21:00 that day |
 | CAMT054C | 4× / 8× a day | Boundary | fixed times ending 21:00, weekdays | since the previous checkpoint |
 | CAMT053S, CAMT053E, CAMT054D | End of day | Calendar-day | 06:00, Tue–Sat | the whole previous calendar day |
@@ -125,8 +127,9 @@ simple one-report-type schedules.
 1. The scheduler wakes up (only **one** server instance does, even though many are running —
    the clustered timer guarantees this).
 2. It works out the window for this firing, using the shape rules in §3, from the time it was
-   *scheduled* for — never the wall-clock time it actually woke up. (This matters for
-   catch-ups and restarts — a delayed run still reports the period it was meant to.)
+   *scheduled* for — never the wall-clock time it actually woke up. (For a normal firing these
+   are the same; the distinction matters for crash recovery and for manual backfills, where a
+   run must report the period it was scheduled for, not when it happened to execute.)
 3. It hands the pipeline: **report type · frequency · scheduled time · window start · window
    end**, and creates one tracking record ("Run") for that firing.
 4. The pipeline does everything else — find the matching report configurations, resolve their
@@ -163,19 +166,23 @@ and removes anything orphaned, *before* the scheduler starts running.
 
 ## 8. What happens if the whole system was down
 
-If every server was down across a scheduled firing, that firing is *missed*. What to do about
-it is a **business decision, still open** (§9). The current recommendation:
+If every server was down across a scheduled firing, that firing is *missed*. **The policy is:
+do nothing.** The missed slot is skipped entirely; the timetable simply resumes at its next
+natural scheduled time and produces that window normally. There is **no automatic catch-up**,
+for any report — frequent or end-of-day.
 
-- **Frequent reports (sub-daily):** do nothing. Skip the missed slot, resume at the next one.
-  Losing 30 minutes of one intraday window is cheap; the next run is minutes away.
-- **End-of-day reports:** these need a real answer, because a missed 06:00 firing means a
-  whole day's statement never gets produced. Either fire it once, late (the window is still
-  correct — it's tied to the calendar date, not the wake time), or skip it but raise an alert
-  so someone runs it manually.
+- **Frequent reports (sub-daily):** losing one window is cheap; the next run is minutes away.
+- **End-of-day reports:** a missed 06:00 firing means that day's statement is not produced. It
+  must be **backfilled by an explicit manual trigger**. Recommended: an alert — *"no
+  end-of-day run for date D"* — so an operator knows to do that.
 
-Deliberately *not* doing: replaying every missed slot after a long outage. Down for six hours
-does not mean six catch-up runs — at most one, for the most recent missed slot; older gaps are
-filled by an explicit manual or on-demand request.
+**Backfilling** is a first-class capability: an operator (or a small admin endpoint) can fire
+a job for one or more missed slots, passing the missed slot times as parameters. Each backfill
+produces exactly the window that firing would have produced on time, and is idempotent — a
+backfill for a slot that already ran is a harmless no-op.
+
+Deliberately *not* doing: any automatic replay of missed slots. Recovery of a gap is always a
+conscious operator action, never a surprise burst of catch-up runs after an outage.
 
 ---
 
@@ -183,12 +190,19 @@ filled by an explicit manual or on-demand request.
 
 | # | Question | Status |
 |---|---|---|
-| 1 | **Missed-firing policy** — confirm "do nothing for frequent reports; decide separately for end-of-day". | Business decision; recommendation on record; needs a Quartz behaviour test. |
-| 2 | **Every-2-hours / every-4-hours window** — production today does *not* cover midnight to the first run (00:00–01:00 is unreported). Keep that (simpler), or close the gap? | Business query outstanding. One-line config change either way. |
-| 3 | **The eight fire times** for the 8×-a-day notification report. | Config value, not yet supplied. |
-| 4 | **Daylight-saving handling** — proposed rules for the twice-a-year clock change (a boundary time that doesn't exist / happens twice). | Proposal on record; confirm it matches business expectation. |
-| 5 | **Generated timer vs. hand-written timer** in config. | Recommended: generate. Under discussion. |
-| 6 | **Pause / resume a schedule at runtime** — a small optional feature. | May be dropped from the first release. |
+| 1 | **The eight fire times** for the 8×-a-day notification report. | Config value, not yet supplied. |
+| 2 | **Daylight-saving handling** — proposed rules for the twice-a-year clock change (a boundary time that doesn't exist / happens twice). | Proposal on record; confirm it matches business expectation. |
+| 3 | **Generated timer vs. hand-written timer** in config. | Recommended: generate. Under discussion. |
+| 4 | **Pause / resume a schedule at runtime** — a small optional feature. | May be dropped from the first release. |
+
+**Recently decided:**
+
+- **Missed-firing policy — do nothing.** No automatic catch-up; missed slots are backfilled by
+  an explicit manual trigger (§8). Implementation check: a test that the scheduler skips a
+  missed firing cleanly.
+- **Every-2-hours / every-4-hours window — boundary, anchored to midnight.** First run of the
+  day covers 00:00–03:00 / 00:00–05:00. This deliberately differs from the legacy system,
+  which leaves 00:00–01:00 unreported for these two — a **parity note for cutover**.
 
 Everything else — the three shapes, the single-worker model, concurrent runs, the
 scheduler/pipeline split, restart reconciliation — is settled.
