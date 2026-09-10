@@ -7,7 +7,7 @@ so the reasoning behind the final shape survives outside the chat transcript.
 
 ## Starting point
 
-**`goal.md`** — a lean brief: purpose (generate CAMT report messages, publish JSON
+**`message-pipeline/goal.md`** — a lean brief: purpose (generate CAMT report messages, publish JSON
 `ReportMessage` to one IBM MQ queue per report type; a downstream Executor renders the actual
 reports), six report types, three inbound triggers (scheduled / on-demand / PHT), fixed
 constraints (Spring Boot, IBM MQ, SQL Server, Quartz), multi-pod deployment where any pod can
@@ -158,6 +158,54 @@ retires an item as `OBSOLETE`, query-failed goes through the ordinary `attempt_c
 
 **Review:** no further architecture or schema issues. Phase closed on **Option A**.
 
+### v08 — post-review product decisions (not a review round)
+
+Three constraints confirmed by the product owner, which **removed** machinery rather than adding it:
+
+- A scheduled run and an on-demand request **may both produce** a message for the same config /
+  report type / window, and **both are delivered**, distinguished by trigger metadata.
+- **PHT recipients are disjoint, enforced in data:** their `ReportConfig` row has
+  `frequency = 'NEVER'`, and the scheduled path selects with
+  `report_type = ? AND frequency = ? AND is_active = 1`, so it never picks them up. The PHT
+  flow resolves that config by recipient + report type directly.
+- Executor accepts two semantically-equal messages as long as trigger metadata distinguishes
+  them.
+
+**Change 1 — `ScopeClaim` removed.** The **`ScopeClaim` table and its `MERGE`/`HOLDLOCK`
+acquire are gone.** Scheduled and on-demand messages already have distinct outbox identities,
+so they never collide on `UQ_Outbox_Identity` and both publish by design — `ScopeClaim` only
+ever made one trigger *wait* for the other, contrary to the confirmed intent. `UQ_Outbox_Identity`
+alone remains and independently covers the only real double-publish case (a scheduled run vs.
+its own crash-recovery / a zombie original pod).
+
+**Change 2 — scheduled `execution_id` is derived, not a sentinel.** Earlier drafts gave every
+scheduled-path outbox row an all-zeros `execution_id`; it is now
+`uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")`. The same slot (crash
+recovery, a snapped misfire catch-up — both reuse `scheduled_time`) still yields the same id
+and dedups; a genuinely distinct firing (a fast-cadence TEST tick, an un-overridden manual
+re-run) yields a distinct id and a fresh message. This removes the `END_OF_DAY` fast-TEST
+limitation entirely — `END_OF_DAY` can now be fired every few minutes in TEST and produce a
+full round-trip on each fire, even though its window ("yesterday 00:00–24:00") never changes.
+Production is unaffected (`END_OF_DAY` fires once a day). Consistent with on-demand/PHT, where
+`execution_id` already means "which execution produced this."
+
+**Change 3 — `Run` schema fix (from a review of `scheduling/solution_v01.md`).** The scheduling
+design leaned on `UNIQUE (report_type, frequency, scheduled_time)` on `Run`, but the `Run` DDL
+had no `frequency` column and no such index. Added to `message-pipeline/solution_v08.md`: `frequency
+VARCHAR(20) NULL` (with `CK_Run_Frequency_Required` for `SCHEDULED`), `window_start` /
+`window_end DATETIME2 NOT NULL` (frozen at creation, so recovery's "keep paging" needs no
+recompute and a later window-function change can't alter an in-flight run), and
+`UQ_Run_ScheduledSlot` as a **filtered** unique index over `SCHEDULED` rows only — a plain
+constraint would wrongly block a legitimate on-demand re-request. Also stated: `Run` creation
+hitting that index is a **named success path** (catch, log, exit the job cleanly — no
+`JobExecutionException`), mirroring the `Outbox` "already exists" path.
+
+Also proposed (pending confirm): the on-demand path skips-and-logs any supplied config with
+`frequency = 'NEVER'` as a cheap guard against a mistaken request. Captured in
+`message-pipeline/solution_v08.md`; `message-pipeline/how-it-works.md` and `scheduling/solution_v01.md` updated to match.
+Scheduling was also split into its own document (`scheduling/solution_v01.md`) at the product
+owner's request.
+
 ---
 
 ## Decisions that changed during review
@@ -172,14 +220,17 @@ retires an item as `OBSOLETE`, query-failed goes through the ordinary `attempt_c
 
 ---
 
-## Final shape (v07)
+## Final shape (v08)
 
 - **Option A**: one in-process pipeline per work item — resolve → assemble → write outbox row
   → mark `PUBLISHED` — shared across scheduled / on-demand / PHT.
 - **Correctness backstop**: `UQ_Outbox_Identity` on `(trigger_type, config_id, report_type,
-  scope_key, window_start, window_end, execution_id)`. Everything else (the `(config, window)`
-  claim) is optimization. Delivery to Executor is **at-least-once**; Executor dedupes on the
+  scope_key, window_start, window_end, execution_id)` — the **sole** guard; there is no
+  cross-trigger lock (v08). Delivery to Executor is **at-least-once**; Executor dedupes on the
   same tuple, which `ReportMessage` carries as fields.
+- **Cross-trigger independence (v08)**: scheduled and on-demand both publish for the same
+  config/window (different `execution_id` → different identity); PHT is held disjoint by a
+  `frequency = 'NEVER'` config the scheduled predicate never selects.
 - **Unit of work** = one message; `WorkItem` rows are the authoritative fan-out for a run,
   created idempotently, page by page, interleaved with batched resolution.
 - **Recovery** (scheduled runs only): heartbeat + clustered sweeper + CAS ownership; re-drive
@@ -198,10 +249,40 @@ retires an item as `OBSOLETE`, query-failed goes through the ordinary `attempt_c
 
 ## Still open — detailed-design pass, not architecture
 
-- Concrete `ScopeClaim` TTL — from observed p99 per-config processing time (load test),
-  reconciled with the recovery-detection interval and the claim-expiry-during-recovery effect.
 - Concrete `ProcessedInboundMessage` retention floor — read from the actual
   backout / max-redelivery configuration on `CAMT.ONDEMAND.QUEUE` and `CAMT.PHT.QUEUE`.
-- Sequence diagram for the `faq.md` Q2 race (scheduled + on-demand on the same
-  `(config, window)` across two pods) against the final schema and the `MERGE`-based claim.
-- Confirm the no-cross-message-ordering contract point with the Executor team.
+- Confirm the no-cross-message-ordering contract point, and the "two semantically-equal
+  messages distinguished by trigger metadata" acceptance, with the Executor team.
+- Confirm or drop the on-demand `frequency = 'NEVER'` skip-and-log guard (v08).
+- Scheduling design — **`scheduling/solution_v01.md`** (single consolidated doc; the earlier
+  draft, the clean brief, the external agent's options pass, and the bikili review were all
+  folded in and then removed). Design: one logical schedule per `(report_type, frequency)`;
+  one `ReportSchedulingJob` class with 14 data-driven `JobDetail`s (no per-report-type
+  subclasses); crons generated from a declarative spec; boundary frequencies on a single cron
+  with the sequence derived by snapping the fire time; pure window function (rolling /
+  boundary / calendar-day) with an explicit DST rule; `UNIQUE (report_type, frequency,
+  scheduled_time)` on `Run`; `requestRecovery(false)` (the pipeline's sweeper owns recovery);
+  concurrent adjacent-window runs are intended (no `@DisallowConcurrentExecution`).
+  **Decisions folded in since:**
+  - Misfire policy = **do nothing**. No automatic catch-up; missed slots recovered only by an
+    explicit backfill.
+  - `EVERY_2/4_HOURS` = **boundary**, first window anchored to `00:00` — a deliberate
+    divergence from the legacy system's rolling behaviour (**parity note for cutover**).
+  - `EIGHT_TIMES_PER_DAY` boundaries = `03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00`
+    (config-revisable later).
+  - **Cron is generated** from the declarative spec (raw `cron-override` for TEST only) —
+    the hand-written-cron question is closed.
+  - **Admin endpoints in v1:** `run`, `backfill` (explicit slot list or `from`/`to` range →
+    one job per slot), `pause`, `resume` (forward-only), `status`.
+  - **DST rules chosen:** spring-gap boundary → shift forward; fall-back boundary → earlier
+    occurrence; transition-day windows are calendar windows (elapsed length varies by ±1 h).
+  - **`Run` schema:** `frequency` + `window_start`/`window_end` columns and the filtered
+    `UQ_Run_ScheduledSlot` index added to `solution_v08.md`.
+  - **Business timezone:** `Europe/Stockholm`.
+
+  Left to confirm (implementation/sign-off, not design): final business OK on the 8 times and
+  the DST rule; a Quartz test that `DO_NOTHING` skips a missed firing cleanly.
+
+> The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
+> `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just
+> "both publish, distinguished by trigger metadata."

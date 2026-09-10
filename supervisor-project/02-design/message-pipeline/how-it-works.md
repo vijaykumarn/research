@@ -1,7 +1,9 @@
-# Commander (v07) — How It Works, In Plain Terms
+# Commander — How It Works, In Plain Terms
 
 This explains what the application actually *does*, step by step, and why it's built that way.
-No schema detail — just the mechanism.
+No schema detail — just the mechanism. Reflects the **v08** design. Scheduling (which report
+type runs how often, and the reporting-window rules) is a separate concern — see
+`../scheduling/solution_v01.md`.
 
 ---
 
@@ -50,20 +52,30 @@ relay sends the same tray row twice — handled in the next section.
 
 ---
 
-## 3. How duplicates are actually prevented
+## 3. How duplicates are prevented
 
 Every message has a **logical identity** — a fingerprint of what it represents:
 
 > which config · which report type · which account-or-payment-type slice · which time window
-> · (for on-demand/PHT) which request
+> · which trigger · (for on-demand/PHT) which request
 
-The **Outbox table refuses to hold two rows with the same fingerprint.** So if two pods ever
-try to produce the same report at the same time, the first one's row goes in and the second
-one's insert bounces — the second pod sees "already there, nothing to do" and moves on. One
-copy, ever.
+The **Outbox table refuses to hold two rows with the same fingerprint.** So if the same
+message gets built twice — most commonly when a scheduled run and its own crash-recovery both
+reach the same item, or a slow pod is still alive when recovery starts — the first row goes in
+and the second insert bounces. The second pod sees "already there, nothing to do" and moves
+on. One copy, ever. That database rule is the real guarantee; there is no separate lock.
 
-That database rule is the real guarantee. Everything else (the "claim" in section 6) is just
-to avoid wasting effort.
+**Scheduled and on-demand are deliberately independent, not deduplicated against each other.**
+The fingerprint includes *which trigger* and, for on-demand, *which request*. So a scheduled
+"CAMT052B, config X, window W" and an on-demand request for the same config and window have
+**different** fingerprints — both are built, both are published, and Executor tells them apart
+by the trigger metadata. That is intended: an on-demand request always produces a fresh
+message, even if the scheduler already made one for the same window.
+
+**PHT is kept separate by data, not by a lock.** PHT recipients have a `report_config` row
+whose frequency is set to `NEVER`, and the scheduled path only ever selects rows matching a
+real report-type + frequency + active filter — so it never touches them. The PHT flow looks
+that config up by recipient and report type directly, frequency notwithstanding.
 
 **One honest caveat:** the relay → MQ hop can still deliver the *same tray row* twice (send
 succeeds, pod dies before marking it "sent", another relay resends it). So the message carries
@@ -84,13 +96,12 @@ done.*
    mode**, which by itself guarantees **only one pod** picks up that firing.
 2. That pod creates a **Run** row (one run = this firing).
 3. It works in **pages of ~500 configs** at a time:
-   - fetch the next 500 active `ReportConfig`s for this report type
+   - fetch the next 500 `ReportConfig`s matching this report type + this frequency + active
    - one set of bulk queries pulls all the account / alias / payment-type data for those 500
      at once (not 500 separate trips)
    - for each config, the **bundling rule** (section 5) says how many messages it produces —
      write those as **WorkItem** rows
-   - for each WorkItem: claim the config (section 6) → build the message → write it to the
-     **Outbox** → mark the WorkItem done → release the claim
+   - for each WorkItem: build the message → write it to the **Outbox** → mark the WorkItem done
    - record "I've finished configs up to id X" on the Run row
    - next page
 4. Meanwhile the **relay** is continuously taking finished messages out of the Outbox and
@@ -106,13 +117,15 @@ done.*
 4. It records the incoming queue message's id as "processed" and acknowledges the queue.
 
 The execution id is part of the fingerprint for these messages — that's why asking for the
-same report twice on purpose produces two messages instead of being silently swallowed.
+same report twice on purpose produces two messages instead of being silently swallowed, and
+why an on-demand message never collides with a scheduled one.
 
 ### PHT (external balance push)
 
 1. A fixed-width text message lands on `CAMT.PHT.QUEUE` carrying account balances.
 2. A pod parses it, works out the recipient from the engagement identifier in the message, and
-   **mints an acceptance id** (same reason as on-demand).
+   looks up that recipient's `CAMT052B` config — which is marked `frequency = NEVER`, so the
+   scheduler never produces for it. It **mints an acceptance id** (same reason as on-demand).
 3. It builds one `CAMT052B` message that carries those pushed balances, writes it to the
    Outbox, records the incoming message id, and acknowledges the queue.
 
@@ -134,25 +147,7 @@ the count before then).
 
 ---
 
-## 6. Keeping two triggers off the same config at once
-
-The scheduled run, an on-demand request, and a PHT push can all want the same config at the
-same moment, on different pods. To avoid both building the same thing:
-
-- Before working a config for a window, a pod writes a short-lived **claim** row for
-  `(config, window)`.
-- Another pod that wants the same `(config, window)` sees the claim and backs off (on-demand /
-  PHT put their message back on the queue to retry shortly; the scheduled run lets its own
-  recovery pass catch it later).
-- The claim **auto-expires** after a set time, so a pod dying while holding one doesn't block
-  that config forever.
-
-The claim is only an efficiency measure. Even if it fails and two pods both build the message,
-the Outbox fingerprint rule (section 3) still lets only one copy through.
-
----
-
-## 7. What happens when a pod dies
+## 6. What happens when a pod dies
 
 ### A scheduled run
 
@@ -181,7 +176,7 @@ before.
 
 ---
 
-## 8. How a WorkItem ends
+## 7. How a WorkItem ends
 
 Every WorkItem finishes in exactly one of these states:
 
@@ -198,19 +193,18 @@ temporary database hiccup can never quietly retire real work.
 
 ---
 
-## 9. The tables, in one line each
+## 8. The tables, in one line each
 
 | Table | In plain words |
 |---|---|
 | **Run** | One row per triggered run — a schedule firing, or an accepted on-demand / PHT message. Holds the heartbeat and the "finished up to config X" mark. |
 | **WorkItem** | The to-do list: one row per report message Commander intends to produce, plus its state and attempt count. |
 | **Outbox** | The outbox tray: finished messages waiting for the relay to put them on MQ. Enforces one-row-per-fingerprint. |
-| **ScopeClaim** | Short-lived "I'm working on this `(config, window)` right now" markers. Auto-expiring. |
 | **ProcessedInboundMessage** | Ids of incoming queue messages already fully handled, so an MQ redelivery doesn't cause a second run. |
 
 ---
 
-## 10. Why this shape achieves the goals
+## 9. Why this shape achieves the goals
 
 | Goal (from the brief) | How it's met |
 |---|---|
@@ -218,14 +212,14 @@ temporary database hiccup can never quietly retire real work.
 | Never publish a duplicate report message | The Outbox refuses a second row with the same fingerprint — only one copy can ever enter the tray. |
 | …and if MQ still delivers a repeat | Each message carries its fingerprint; Executor ignores fingerprints it has already processed. |
 | Only one pod runs a given scheduled trigger | Quartz clustered mode, for free. |
-| Two triggers shouldn't build the same config at once | Short-lived `(config, window)` claim rows; the Outbox rule is the real backstop if a claim is missed. |
+| A scheduled run and an on-demand request for the same config/window | Both are produced and delivered, tagged by trigger type + execution id — they have different fingerprints, so neither blocks or suppresses the other. PHT recipients are held separate by a `frequency = NEVER` config the scheduler never selects. |
 | Handle 1,000–10,000 configs per run efficiently | Work in pages of ~500; one set of bulk queries per page, not per config. |
 | One bad record shouldn't stall the whole run | Per-item attempt counter → `FAILED_POISON` + alert; the run keeps going. |
 | The report window must reflect the scheduled time, not when the pod happened to run | The window is computed from the trigger's scheduled time and stored on the Run row, so a delayed or resumed run still produces the window it was meant to. |
 
 ---
 
-## 11. Chosen design and what's still open
+## 10. Chosen design and what's still open
 
 **Chosen:** "Option A" — one straightforward in-process pipeline per WorkItem
 (resolve → assemble → Outbox → mark done), shared by all three triggers. Spring Batch was
@@ -233,8 +227,7 @@ considered and not adopted (it restarts at the step level, adds its own bookkeep
 and doesn't fit the event-driven on-demand / PHT triggers).
 
 **Still to pin down (numbers and a diagram, not design):**
-- how long a `ScopeClaim` should live before expiring (from a load test)
 - how long to keep `ProcessedInboundMessage` ids (from the MQ redelivery / backout settings)
-- a sequence diagram of the "scheduled run and on-demand request hit the same config at once"
-  case
-- confirming with the Executor team that they will dedupe on the message fingerprint
+- confirming with the Executor team that they will dedupe on the message fingerprint, and that
+  they accept two semantically-equal messages distinguished only by trigger metadata
+- the scheduling design itself — covered separately in `../scheduling/solution_v01.md`

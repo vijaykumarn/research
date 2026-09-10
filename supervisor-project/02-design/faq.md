@@ -1,6 +1,6 @@
 # Commander Redesign — FAQ
 
-Plain-language explanations of points raised in `goal.md`. Kept here so the reasoning isn't lost.
+Plain-language explanations of points raised in `message-pipeline/goal.md`. Kept here so the reasoning isn't lost.
 
 ---
 
@@ -162,3 +162,119 @@ be a short advisory claim rather than a correctness-critical distributed lock.
 run holds that `(config, window)`, NACK it for redelivery with a short delay and bounded
 retries — it comes back naturally after the scheduled run releases that config. "Processed
 promptly, no fixed SLA" makes brief waiting acceptable.
+
+> **Superseded in v08.** The `ScopeClaim` lock described here was removed — see
+> `message-pipeline/solution_v08.md`. Scheduled and on-demand messages already have distinct logical
+> identities, so both publish for the same `(config, window)` by design; `UQ_Outbox_Identity`
+> alone covers the only real double-publish case (a scheduled run vs. its own recovery).
+
+---
+
+## Q6. What's the difference between `DAILY` and `ONE_TIME_PER_DAY` — why not merge them into one?
+
+They are the **same cadence** — once per day. The only real difference is the **reporting-window
+rule**:
+
+| | `DAILY` (CAMT053S, CAMT053E, CAMT054D) | `ONE_TIME_PER_DAY` (CAMT054C) |
+|---|---|---|
+| Fires | 06:00, Tue–Sat | 21:00, Mon–Fri |
+| Window | the **whole previous calendar day** (00:00–24:00 of yesterday) | **midnight → the fire time** of the **same** day (00:00–21:00) |
+| Window model | `PREVIOUS_CALENDAR_DAY` | `BOUNDARY` (list `[00:00, 21:00]`) |
+
+Fire time and days are just config. The substantive split is "yesterday, complete" vs. "today
+so far, partial."
+
+**You *can* technically merge them** — the trigger is keyed by `(report_type, frequency)`, so
+`(CAMT053S, ONCE_PER_DAY)` and `(CAMT054C, ONCE_PER_DAY)` would already be different triggers
+with their own cron, days, and window model, and no single report type needs both behaviours.
+
+**But merging is not a good idea:**
+
+1. **"Window model" is not an independent axis.** Every frequency in the catalogue maps to
+   exactly one window rule (all boundary-model except `DAILY`). Today that mapping is derivable
+   from the frequency. Merging `DAILY` and `ONE_TIME_PER_DAY` *creates* a genuine, settable-wrong
+   `window-model` config field where there wasn't one — relocating complexity, not removing it.
+2. **They are different report concepts.** `DAILY` is an end-of-day report on a *completed*
+   day (statements, full-day notifications), run the next morning. `ONE_TIME_PER_DAY` is the
+   **N = 1 member of CAMT054C's intraday family** — same report type, same partial-same-day
+   semantics, same boundary model as its `FOUR_`/`EIGHT_TIMES_PER_DAY` siblings. It belongs
+   *with* them; `DAILY` belongs with nothing else.
+3. **`frequency` is a `ReportConfig` column people read.** Keep it self-describing. After a
+   merge, the same `frequency` value would mean structurally different reporting depending on
+   report type.
+4. **It composes badly.** A future third once-daily window (previous *business* day, trailing
+   24 h, …) is a new named value in the current design, versus an ever-growing `window-model`
+   enum that every once-daily trigger must set correctly.
+5. **Weaker misconfiguration guard.** `(CAMT053S, ONE_TIME_PER_DAY)` today has no matching
+   trigger → caught at startup. Merged, it's valid and correctness rests entirely on a
+   separate field being right.
+
+**Cost of keeping them separate:** one extra enum constant. No runtime cost, no schema cost
+(`frequency` is in no dedup key), no coupling.
+
+**What was worth fixing is the naming** — `DAILY` and `ONE_TIME_PER_DAY` *sounded* like
+synonyms. Resolved (applied in the scheduling design):
+
+- `DAILY` → **`END_OF_DAY`** — CAMT053S / 053E / 054D; reports the completed previous day.
+- `ONE_TIME_PER_DAY` → **`ONCE_PER_DAY`** — CAMT054C; the 1× member of the
+  `ONCE_ / FOUR_ / EIGHT_TIMES_PER_DAY` family, partial same-day window.
+
+Two distinct concepts, two names, no apparent overlap.
+
+---
+
+## Q7. One `ReportSchedulingJob` class instead of one per report type — how do I run a particular job manually?
+
+**Yes, one job class**, with **one Quartz `JobDetail` per `(report_type, frequency)`** (14 of
+them), each carrying `report_type` + `frequency` + its window spec in its own `JobDataMap`. No
+per-report-type Java subclasses. The number of Java classes is orthogonal to manual
+execution — Quartz triggers a run by `JobKey`, not by class.
+
+**A manual run is `scheduler.triggerJob(JobKey)`:**
+
+```java
+scheduler.triggerJob(JobKey.jobKey("CAMT052B-EVERY_30_MIN", "camt052b-group"));
+```
+
+Runs that job now, out of band from its cron. The 14 JobDetail keys are your "run this
+particular one" handles.
+
+**This is actually easier than a class-per-report-type model.** In that model the frequency
+lives on the *trigger's* data map, so triggering the bare JobDetail fires with no frequency in
+context and the job throws. The data-driven JobDetail carries everything it needs on itself,
+so `triggerJob(key)` just runs.
+
+**Re-run a specific slot** — the job reads an optional override from its merged data map:
+
+```java
+Instant scheduledTime = data.containsKey("scheduledTimeOverride")
+    ? Instant.parse(data.getString("scheduledTimeOverride"))
+    : context.getScheduledFireTime().toInstant();
+
+JobDataMap override = new JobDataMap();
+override.put("scheduledTimeOverride", "2026-09-09T13:00:00Z");
+scheduler.triggerJob(JobKey.jobKey("CAMT052B-EVERY_1_HOUR", "camt052b-group"), override);
+```
+
+That re-runs the 13:00 slot (window 12:00–13:00) whenever you fire it. Without the override, a
+manual fire uses "now" snapped to the nearest boundary.
+
+**What you'd actually use day-to-day** — a thin admin surface wrapping `triggerJob` (a custom
+Actuator endpoint or a small authenticated `POST`):
+
+```
+POST /admin/scheduling/run
+{ "reportType": "CAMT053S", "frequency": "END_OF_DAY", "scheduledTime": "2026-09-08T06:00:00Z" }
+```
+
+→ resolves the JobKey, calls `triggerJob(key, overrideMap)`. Same one line of Quartz whether
+there is 1 job class or 6.
+
+**Where the boundary is:**
+- *"Re-run scheduled slot X"* → the manual-trigger path above. Still goes through the scheduled
+  pipeline: computes the window, creates a `Run` (deduped by `UQ_Run_ScheduledSlot` if that
+  slot already succeeded — a clean no-op), publishes.
+- *"Generate for an arbitrary historical window / a specific config-id list"* → that is the
+  **on-demand trigger's** job (it already takes a config-id list + period). Don't force an
+  arbitrary window into the scheduled job — deriving the window from the slot is its whole
+  identity.
