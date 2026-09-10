@@ -262,14 +262,26 @@ owner's request.
   with the sequence derived by snapping the fire time; pure window function (rolling /
   boundary / calendar-day) with an explicit DST rule; `UNIQUE (report_type, frequency,
   scheduled_time)` on `Run`; `requestRecovery(false)` (the pipeline's sweeper owns recovery);
-  concurrent adjacent-window runs are intended (no `@DisallowConcurrentExecution`); manual
-  runs and missed-slot backfill via `scheduler.triggerJob` + a `scheduledTimeOverride`.
-  **Decided since:** misfire policy is **do nothing** — no automatic catch-up, missed slots
-  backfilled by explicit manual trigger; `EVERY_2/4_HOURS` are **boundary**-shaped with the
-  first window anchored to `00:00` (a deliberate divergence from the legacy system's rolling
-  behaviour — parity note for cutover). Open within it: the eight `EIGHT_TIMES_PER_DAY` times,
-  DST confirmation, generated-vs-hand-written cron, pause/resume in v1, and a Quartz test that
-  `MISFIRE_INSTRUCTION_DO_NOTHING` skips a missed firing cleanly.
+  concurrent adjacent-window runs are intended (no `@DisallowConcurrentExecution`).
+  **Decisions folded in since:**
+  - Misfire policy = **do nothing**. No automatic catch-up; missed slots recovered only by an
+    explicit backfill.
+  - `EVERY_2/4_HOURS` = **boundary**, first window anchored to `00:00` — a deliberate
+    divergence from the legacy system's rolling behaviour (**parity note for cutover**).
+  - `EIGHT_TIMES_PER_DAY` boundaries = `03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00`
+    (config-revisable later).
+  - **Cron is generated** from the declarative spec (raw `cron-override` for TEST only) —
+    the hand-written-cron question is closed.
+  - **Admin endpoints in v1:** `run`, `backfill` (explicit slot list or `from`/`to` range →
+    one job per slot), `pause`, `resume` (forward-only), `status`.
+  - **DST rules chosen:** spring-gap boundary → shift forward; fall-back boundary → earlier
+    occurrence; transition-day windows are calendar windows (elapsed length varies by ±1 h).
+  - **`Run` schema:** `frequency` + `window_start`/`window_end` columns and the filtered
+    `UQ_Run_ScheduledSlot` index added to `solution_v08.md`.
+  - **Business timezone:** `Europe/Stockholm`.
+
+  Left to confirm (implementation/sign-off, not design): final business OK on the 8 times and
+  the DST rule; a Quartz test that `DO_NOTHING` skips a missed firing cleanly.
 
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just

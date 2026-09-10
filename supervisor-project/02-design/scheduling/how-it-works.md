@@ -113,8 +113,6 @@ hand-wrote the timer, the two could drift apart — add a boundary, forget the t
 get windows that don't line up with when the job actually runs. Generating one from the other
 removes that whole class of mistake. (A raw-timer override exists for test environments only.)
 
-*This is one of the open points — see §9.*
-
 One convenience: a single schedule entry can list several report types that share a timetable
 (the three end-of-day reports, say). At startup the application quietly expands that into
 separate independent schedules — one per report type — so at runtime there's no "group", just
@@ -141,8 +139,12 @@ simple one-report-type schedules.
 
 **One worker, many timetables — not one worker per report type.** There's a single job type
 that reads "which report, which frequency, which window" from its own configuration. Fourteen
-timetables are registered from a loop, not fourteen hand-written classes. Running a specific
-one manually is still a one-line call keyed by name.
+timetables are registered from a loop, not fourteen hand-written classes.
+
+**A small admin surface.** Authenticated, admin-only endpoints let an operator: run a schedule
+now, backfill one or more missed slots (passing the slot times), pause a schedule, resume it,
+and list schedule status. This is how a missed end-of-day report gets recovered (§8), and how
+a schedule is stopped without a redeploy.
 
 **Overlapping runs are allowed on purpose.** If the 12:30–13:00 run is slow and still going
 when the 13:00–13:30 run fires, **both run at the same time and both publish**. A slow run
@@ -188,21 +190,26 @@ conscious operator action, never a surprise burst of catch-up runs after an outa
 
 ## 9. Open points for the architect
 
-| # | Question | Status |
+Almost everything is now settled. Two items await a final business sign-off (not a redesign):
+
+| # | Item | Status |
 |---|---|---|
-| 1 | **The eight fire times** for the 8×-a-day notification report. | Config value, not yet supplied. |
-| 2 | **Daylight-saving handling** — proposed rules for the twice-a-year clock change (a boundary time that doesn't exist / happens twice). | Proposal on record; confirm it matches business expectation. |
-| 3 | **Generated timer vs. hand-written timer** in config. | Recommended: generate. Under discussion. |
-| 4 | **Pause / resume a schedule at runtime** — a small optional feature. | May be dropped from the first release. |
+| 1 | **Daylight-saving rules** — a boundary time that doesn't exist (spring) shifts forward to the next real instant; one that happens twice (autumn) uses the earlier occurrence; transition-day windows are calendar windows, so their elapsed length can be an hour short/long twice a year. | Rules chosen; confirm they match business expectation. |
+| 2 | **The eight fire times** for the 8×-a-day notification report — starting value `03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00`, revisable later via config. | Confirm the starting set. |
 
-**Recently decided:**
+Plus one build-time check: a test that the scheduler skips a missed firing cleanly under the
+"do nothing" policy.
 
-- **Missed-firing policy — do nothing.** No automatic catch-up; missed slots are backfilled by
-  an explicit manual trigger (§8). Implementation check: a test that the scheduler skips a
-  missed firing cleanly.
+**Decided since the last review:**
+
+- **Missed-firing policy — do nothing.** No automatic catch-up; missed slots are recovered by
+  an explicit backfill (§8) — a first-class admin capability, not a workaround.
 - **Every-2-hours / every-4-hours window — boundary, anchored to midnight.** First run of the
   day covers 00:00–03:00 / 00:00–05:00. This deliberately differs from the legacy system,
   which leaves 00:00–01:00 unreported for these two — a **parity note for cutover**.
+- **Cron is generated** from the plain-terms config, never hand-written (a raw override exists
+  for test only).
+- **Pause / resume is in v1**, alongside run and backfill, as admin endpoints.
 
 Everything else — the three shapes, the single-worker model, concurrent runs, the
 scheduler/pipeline split, restart reconciliation — is settled.

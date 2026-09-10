@@ -6,9 +6,10 @@ firing represents, then hands off to the message-production pipeline
 created.
 
 **In scope:** cadences, the reporting-window rules, wiring to Quartz, the deploy-time config
-shape, manual execution, misfire policy, an optional pause/resume hook.
-**Out of scope:** producing the report messages (the pipeline); any schedule-management UI or
-runtime schedule editing; holiday calendars.
+shape, and the admin endpoints (manual run, backfill, pause/resume, status).
+**Out of scope:** producing the report messages (the pipeline); a schedule-management UI or
+runtime editing of the *timetables themselves* (that stays deploy-time config); holiday
+calendars.
 
 ---
 
@@ -41,7 +42,8 @@ expanded that into separate per-report-type schedules before anything fires (§5
 ## 2. Frequency catalogue
 
 A `ReportConfig.frequency` value selects which schedule picks it up. All times are in the
-single configured business timezone. Business day = Mon–Fri, no holiday calendar.
+single configured business timezone (`commander.scheduling.timezone = Europe/Stockholm`).
+Business day = Mon–Fri, no holiday calendar.
 
 | Report type(s) | `frequency` | Shape | Fires at (business TZ) | Days | Reporting window |
 |---|---|---|---|---|---|
@@ -51,7 +53,7 @@ single configured business timezone. Business day = Mon–Fri, no holiday calend
 | CAMT052B, CAMT052BT | `EVERY_4_HOURS` | boundary | 05:00, 09:00, 13:00, 17:00, 21:00 | Mon–Fri | previous boundary → this; **first window 00:00 → 05:00** (5 h) |
 | CAMT054C | `ONCE_PER_DAY` | boundary | 21:00 | Mon–Fri | 00:00 → 21:00, same day |
 | CAMT054C | `FOUR_TIMES_PER_DAY` | boundary | 10:00, 13:00, 18:00, 21:00 | Mon–Fri | previous boundary → this; first = 00:00 → 10:00 |
-| CAMT054C | `EIGHT_TIMES_PER_DAY` | boundary | 8 configurable times, last = 21:00 | Mon–Fri | previous boundary → this; first = 00:00 → first time |
+| CAMT054C | `EIGHT_TIMES_PER_DAY` | boundary | 03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00 | Mon–Fri | previous boundary → this; first = 00:00 → 03:00 |
 | CAMT053S, CAMT053E, CAMT054D | `END_OF_DAY` | calendar-day | 06:00 | Tue–Sat | the whole **previous calendar day**, 00:00 → 24:00 |
 | any of the above | `NEVER` | — | never scheduled | — | — |
 
@@ -70,6 +72,10 @@ single configured business timezone. Business day = Mon–Fri, no holiday calend
   collide.
 - **`END_OF_DAY`** and **`ONCE_PER_DAY`** are deliberately separate values — same cadence,
   different window rule. See `../faq.md` Q6.
+- **All boundary times are config values.** `EIGHT_TIMES_PER_DAY`'s set above is the starting
+  value; any boundary list can be revised in config and takes effect on the next redeploy
+  (startup reconciliation, §5, removes the superseded triggers). "Deploy-time, not runtime" —
+  there is no live schedule editor (§6).
 
 ---
 
@@ -106,7 +112,7 @@ The frequency's ordered boundary list, with an implicit `00:00` prepended:
 | `EVERY_2_HOURS` | 00:00, 03:00, 05:00, 07:00 … 21:00 |
 | `EVERY_4_HOURS` | 00:00, 05:00, 09:00, 13:00, 17:00, 21:00 |
 | `FOUR_TIMES_PER_DAY` | 00:00, 10:00, 13:00, 18:00, 21:00 |
-| `EIGHT_TIMES_PER_DAY` | 00:00, *t₁ … t₇*, 21:00 |
+| `EIGHT_TIMES_PER_DAY` | 00:00, 03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00 |
 | `ONCE_PER_DAY` | 00:00, 21:00 |
 
 **Sequence resolution** (the single generated cron does not carry an index):
@@ -135,17 +141,33 @@ the calendar day it would have on time.
 
 ### Daylight saving
 
-Boundary times are wall-clock local times, resolved against the firing's local date:
+The business timezone observes DST: clocks jump **forward** one hour in spring (local time
+skips 02:00 → 03:00) and **back** one hour in autumn (local time repeats 01:00 → 02:00). Three
+consequences for boundary scheduling, with the chosen rules:
 
-- **Spring-forward gap** (a boundary time that doesn't exist that day) → resolve to the next
-  instant that does exist. A skipped boundary would leave a permanently unreported slice of
-  the day.
-- **Fall-back overlap** (a boundary time that occurs twice) → resolve to the **first**
-  occurrence.
-- `END_OF_DAY`'s previous-calendar-day window spans **23 h or 25 h** on a transition day —
-  intended (a calendar day, not a fixed duration).
+- **A boundary in the spring-forward gap** (e.g. a future boundary at 02:00 or 02:30, which
+  simply doesn't occur on that day) → **shift it forward to the first instant that does
+  exist** (03:00), and fire there. A plain cron would just not fire for a non-existent time,
+  silently dropping that boundary's run and leaving the next window starting from a boundary
+  that never happened. Shifting keeps every window covered; the cost is a one-day, one-hour
+  distortion of that boundary once a year.
+- **A boundary in the fall-back overlap** (occurs twice) → use the **first (earlier)**
+  occurrence and fire **once**. Deterministic, and it prevents a doubled run / double-counted
+  window.
+- **A window that merely spans a transition** (no boundary in the gap) is a *calendar* window,
+  not a fixed duration — `EVERY_2_HOURS`' `00:00–03:00` is ~2 elapsed hours on spring-forward
+  day and ~4 on fall-back day; `END_OF_DAY` spans **23 h or 25 h**. This is intended. The
+  message contract should note a window's elapsed length can differ by an hour on the two
+  transition days so Executor isn't surprised.
 
-Named, tested rules in the window function — not whatever the time library defaults to.
+**Current boundary set is safe** — no boundary falls in `02:00–03:00`, so none of the above
+triggers today. But boundary lists are editable config (§2), so the rules must be in the
+window function before anyone adds an early-hours boundary.
+
+Implementation: Java's `ZonedDateTime.of(date, localTime, zone)` already resolves
+gap → shift-forward and overlap → earlier-offset, which matches the rules above — but pin it
+with a **named resolver and tests**, so it's a decision, not a library default that could
+change.
 
 ---
 
@@ -186,7 +208,7 @@ the JVM zone otherwise):
 | `EVERY_30_MIN` | `0 30 0-20 ? * MON-FRI` + `0 0 1-21 ? * MON-FRI` (two crons — no single cron hits exactly 00:30 … 21:00) |
 | `ONCE_PER_DAY` | `0 0 21 ? * MON-FRI` |
 | `FOUR_TIMES_PER_DAY` | `0 0 10,13,18,21 ? * MON-FRI` |
-| `EIGHT_TIMES_PER_DAY` | `0 0 <t1>,…,21 ? * MON-FRI` |
+| `EIGHT_TIMES_PER_DAY` | `0 0 3,6,8,10,12,15,18,21 ? * MON-FRI` |
 | `END_OF_DAY` | `0 0 6 ? * TUE-SAT` |
 
 **Boundary frequencies use a single cron**, not one trigger per boundary. A single cron works
@@ -209,7 +231,7 @@ Fixed at deploy time, changed by redeploy. Each entry carries only the meaningfu
 loader derives the crons. Illustrative:
 
 ```properties
-commander.scheduling.timezone = <business zone>
+commander.scheduling.timezone = Europe/Stockholm
 
 # interval-spec form
 commander.scheduling.triggers[0].report-types  = CAMT052B, CAMT052BT
@@ -224,7 +246,7 @@ commander.scheduling.triggers[4].report-types   = CAMT054C
 commander.scheduling.triggers[4].frequency      = EIGHT_TIMES_PER_DAY
 commander.scheduling.triggers[4].days           = MON-FRI
 commander.scheduling.triggers[4].shape          = BOUNDARY
-commander.scheduling.triggers[4].boundaries     = <t1>, <t2>, ... , 21:00
+commander.scheduling.triggers[4].boundaries     = 03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00
 
 # calendar-day
 commander.scheduling.triggers[7].report-types   = CAMT053S, CAMT053E, CAMT054D
@@ -313,8 +335,8 @@ scheduler.triggerJob(JobKey.jobKey("CAMT052B-EVERY_1_HOUR", "camt052b-group"), o
 Re-runs the 13:00 slot (window 12:00–13:00) whenever fired. Without the override, a manual
 fire uses "now" resolved through §4.
 
-**Day-to-day surface** — a thin admin endpoint (custom Actuator endpoint or a small
-authenticated `POST`) wrapping `triggerJob`:
+**Day-to-day surface** — the `POST /admin/scheduling/run` endpoint (full list in §14) wraps
+`triggerJob`:
 
 ```
 POST /admin/scheduling/run
@@ -330,9 +352,8 @@ is *never* recovered automatically — it is backfilled by an explicit manual tr
 backfill is just a manual run (above) with `scheduledTimeOverride` set to the missed slot's
 time, so the window function resolves it exactly as if it had fired on time.
 
-For **several** missed slots, a small batch endpoint takes either an explicit list of slot
-times, or a `(from, to)` range that it expands into that frequency's boundaries within the
-range:
+For **several** missed slots, `POST /admin/scheduling/backfill` (§14) takes either an explicit
+list of slot times or a `(from, to)` range it expands into that frequency's boundaries:
 
 ```
 POST /admin/scheduling/backfill
@@ -453,17 +474,23 @@ reuse the slot's `scheduled_time` (so the same `execution_id`) and dedup normall
 
 ---
 
-## 14. Pause / Resume — minimal, optional
+## 14. Admin endpoints
 
-Native Quartz, no new state:
+One authenticated, admin-only surface (a custom Actuator endpoint or a small guarded
+controller). All operations key on `(report_type, frequency)` — the identity of a logical
+schedule.
 
-- `scheduler.pauseTrigger(key)` / `resumeTrigger(key)` on the clustered scheduler; persisted
-  in the JobStore, cluster-wide, survives restarts.
-- A logical schedule may have more than one `TriggerKey` (`EVERY_30_MIN`); pause/resume for a
-  `(report_type, frequency)` applies to **all** of them.
-- Exposed through the same admin surface as §8, keyed by `(report_type, frequency)`.
-- **Resume is forward-only** — firings missed while paused follow the §9 rule, not backfilled.
-- Droppable from v1 — a pause is then a redeploy with the schedule removed from config.
+| Endpoint | Purpose | Body / params | Behaviour |
+|---|---|---|---|
+| `POST /admin/scheduling/run` | Fire one schedule now, out of band | `reportType`, `frequency`, optional `scheduledTime` | `triggerJob(key, override)`. With `scheduledTime` → that slot's window; without → "now" resolved through §4. |
+| `POST /admin/scheduling/backfill` | Recover one or more missed slots | `reportType`, `frequency`, and either `slots: [...]` or `from` + `to` | Expands `(from, to)` into that frequency's boundaries in range (or takes the explicit list); fires **one job per slot**, each with its own `scheduledTimeOverride`. Idempotent via `UQ_Run_ScheduledSlot`. |
+| `POST /admin/scheduling/pause` | Pause a schedule | `reportType`, `frequency` | `scheduler.pauseTrigger(key)` for **every** `TriggerKey` of that schedule (`EVERY_30_MIN` has two). Persisted in the JobStore → cluster-wide, survives restarts. |
+| `POST /admin/scheduling/resume` | Resume a paused schedule | `reportType`, `frequency` | `scheduler.resumeTrigger(key)` for all its `TriggerKey`s. **Forward-only** — firings missed while paused are *not* backfilled (they follow the §9 do-nothing rule); use `backfill` if you need them. |
+| `GET /admin/scheduling/status` | Inspect schedules | — | Lists each `(report_type, frequency)`: paused/active, its `TriggerKey`s, last fire time, next fire time. |
+
+Pause/resume is **native Quartz, no new state** — `pause`/`resume` just toggle the clustered
+scheduler's trigger state. A paused trigger stays paused across a redeploy as long as it's
+still in config; startup reconciliation (§5) removes it only if it's been dropped from config.
 
 ---
 
@@ -478,19 +505,33 @@ Native Quartz, no new state:
   double-fire the same boundary.
 - **A firing whose scheduled time can't be attributed to a boundary** (implausible off-grid,
   or resolves to the implicit `00:00`) is logged and skipped, not forced onto a wrong window.
+- **A firing that matches no active configs** (`report_type`/`frequency` combination has no
+  `is_active = 1` rows) completes as a zero-`WorkItem` `Run` — a clean no-op, not an error.
+- **Changing a boundary list** is a config edit + redeploy; startup reconciliation (§5) drops
+  the superseded triggers before the scheduler starts.
 
 ---
 
-## 16. Open decisions
+## 16. Status of decisions
 
-- The eight fire times for CAMT054C `EIGHT_TIMES_PER_DAY` — a config value, TBD.
-- DST gap/overlap policy (§4) — a proposal here; confirm with the business.
-- Whether pause/resume (§14) ships in v1.
-- Generated crons vs. a hand-written `cron` field in config (§5, §6) — recommendation is
-  "generate"; still under discussion.
+**Decided:**
 
-**Recently decided (§9, §12):** misfire policy is **do nothing** — a missed firing is skipped
-and only recovered by an explicit manual/batch backfill (§8). `EVERY_2_HOURS` / `EVERY_4_HOURS`
-are **boundary**-shaped, first window anchored to `00:00` (a deliberate change from legacy).
-Remaining implementation check: a Quartz test that `MISFIRE_INSTRUCTION_DO_NOTHING` skips a
-missed `CronTrigger` firing cleanly.
+- Misfire policy — **do nothing** (§9). Missed slots recovered only by explicit
+  manual/batch backfill (§8, §14).
+- `EVERY_2_HOURS` / `EVERY_4_HOURS` — **boundary**, first window anchored to `00:00` (§12) — a
+  deliberate divergence from the legacy system's rolling behaviour (parity note for cutover).
+- `EIGHT_TIMES_PER_DAY` boundaries — `03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00`
+  (§2), a config value that can be revised in a later release (edit + redeploy).
+- Crons are **generated** from the declarative spec, not hand-written (§5, §6). A raw
+  `cron-override` exists for TEST only.
+- **Pause / resume ships in v1**, alongside manual-run and backfill, as admin endpoints (§14).
+- DST — spring-forward boundary → shift forward; fall-back boundary → first occurrence;
+  transition-day windows are calendar windows, not fixed durations (§4).
+
+- Business timezone — `Europe/Stockholm`.
+
+**Still to confirm / verify (implementation, not architecture):**
+
+- The 8 `EIGHT_TIMES_PER_DAY` times and the DST rule — final sign-off from the business.
+- A Quartz test that `MISFIRE_INSTRUCTION_DO_NOTHING` skips a missed `CronTrigger` firing
+  cleanly and the next fire is unaffected.
