@@ -1,0 +1,214 @@
+<mxfile host="65bd71144e">
+    <diagram id="staged-reads" name="1 - Six staged reads">
+        <mxGraphModel dx="897" dy="682" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="960" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="dbbox" value="SQL Server - CAMT schema  (read-committed, no transaction)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;fontColor=#666666;fontSize=11;align=center;" parent="1" vertex="1">
+                    <mxGeometry x="210" y="150" width="430" height="560" as="geometry"/>
+                </mxCell>
+                <mxCell id="callers" value="Three callers&#xa;Scheduled  -  On-demand  -  Recovery" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="285" y="50" width="280" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="r1" value="1.  Config rows - Level 1&#xa;keyset page  /  ConfigId IN  /  Id IN  (recovery, no IsActive filter)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="245" y="170" width="360" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="r2" value="2.  Scopes&#xa;plain IN (:config ids)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="285" y="260" width="280" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="r3" value="3.  Payment types&#xa;TVP (:scope ids)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="285" y="350" width="280" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="r4" value="4.  Accounts&#xa;TVP (:payment-type-assignment ids)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="285" y="440" width="280" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="r5" value="5.  Aliases&#xa;TVP (:payment-type-assignment ids)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="285" y="530" width="280" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="r6" value="6.  Recipients&#xa;plain IN (:distinct MessageRecipientIds)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="285" y="620" width="280" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="asm" value="Pure assembler  (no DB, no Spring)&#xa;group each level&#39;s flat rows by parent id, build tree top-down" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="265" y="740" width="320" height="64" as="geometry"/>
+                </mxCell>
+                <mxCell id="out" value="List&lt;ResolvedConfig&gt;&#xa;all config properties + scope tree + recipient, one per config" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="265" y="840" width="320" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="note" value="6 fixed round trips per page - none per-config.&#xa;Assembler consumes all six flat result sets." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="650" y="360" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;" parent="1" source="callers" target="r1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e1" value="config ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="r1" target="r2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e2" value="scope ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="r2" target="r3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e3" value="assignment ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="r3" target="r4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;" parent="1" source="r4" target="r5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;" parent="1" source="r5" target="r6" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e6" value="recipient ids (from step 1)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;fontColor=#888888;fontSize=10;exitX=1;exitY=0.5;entryX=1;entryY=0.5;" parent="1" source="r1" target="r6" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="625" y="197"/>
+                            <mxPoint x="625" y="647"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;" parent="1" source="r6" target="asm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;" parent="1" source="asm" target="out" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="dependency" name="2 - What each read keys off">
+        <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="760" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="d1" value="1.  Config rows" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="335" y="40" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="d2" value="2.  Scopes" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="180" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="d6" value="6.  Recipients" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="180" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="d3" value="3.  Payment types" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="320" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="d4" value="4.  Accounts" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="460" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="d5" value="5.  Aliases" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="460" width="180" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="dasm" value="Pure assembler&#xa;to  List&lt;ResolvedConfig&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="620" width="260" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="de1" value="config ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d1" target="d2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de2" value="distinct recipient ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d1" target="d6" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de3" value="scope ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d2" target="d3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de4" value="assignment ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d3" target="d4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="de5" value="assignment ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d3" target="d5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="df1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d1" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="df2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d2" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="df3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d3" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="df4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d4" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="df5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d5" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="df6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d6" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="dnote" value="Solid = id set passed to the next read.&#xa;Dashed = flat result set fed to the assembler." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="590" y="400" width="220" height="50" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="recovery" name="3 - Recovery reResolve tri-state">
+        <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="880" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="v0" value="reResolve( Set&lt;WorkItemRef&gt; )&#xa;WorkItemRef = (config_id = surrogate Id, scope_key)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="30" width="320" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="v1" value="Group refs by config_id" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="120" width="240" height="44" as="geometry"/>
+                </mxCell>
+                <mxCell id="v2" value="Recovery Level-1:  Id IN (:ids)  -  NO IsActive filter&#xa;plus Levels 2-6 for the configs returned" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="280" y="200" width="340" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="q1" value="A level query&#xa;threw / timed out?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="300" width="220" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="t1" value="QUERY_FAILED&#xa;every ref in that config-batch, retry&#xa;(FAILED_POISON if it keeps failing)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="312" width="230" height="66" as="geometry"/>
+                </mxCell>
+                <mxCell id="q2" value="Config row missing&#xa;OR  IsActive = 0 ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="330" y="430" width="240" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="t2" value="CONFIRMED_ABSENT - every ref under it&#xa;log  config-deleted / config-deactivated&#xa;pipeline marks WorkItem  OBSOLETE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="640" y="448" width="240" height="66" as="geometry"/>
+                </mxCell>
+                <mxCell id="v3" value="Config active - for each WorkItemRef:&#xa;look up scope_key in the fresh ResolvedConfig" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="300" y="570" width="300" height="54" as="geometry"/>
+                </mxCell>
+                <mxCell id="q3" value="scope_key&#xa;present?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="340" y="660" width="220" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="t3" value="FOUND( data )&#xa;rebuild + publish" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="110" y="672" width="180" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="t4" value="CONFIRMED_ABSENT&#xa;pipeline marks WorkItem  OBSOLETE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="672" width="230" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="v0" target="v1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="v1" target="v2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="v2" target="q1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve3" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="q1" target="t1" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve4" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="q1" target="q2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve5" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="q2" target="t2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve6" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="q2" target="v3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="v3" target="q3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve8" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="q3" target="t3" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="ve9" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="q3" target="t4" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="vnote" value="New leaves that appeared since the original run are ignored -&#xa;recovery only answers for scope_keys that already have WorkItem rows." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="790" width="520" height="40" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

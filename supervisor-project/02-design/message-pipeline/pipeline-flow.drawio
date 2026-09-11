@@ -1,0 +1,217 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="endtoend" name="1 - End to end">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="840" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="t0" value="Trigger:  Scheduled firing  /  On-demand message  /  PHT push" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="20" width="380" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="p1" value="Create Run row&#10;trigger_type, report_type, frequency, scheduled_time, window" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="260" y="92" width="400" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="loop" value="Per page (~500 configs), repeated until the config set is exhausted" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;verticalAlign=top;fontColor=#666666;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="200" y="170" width="520" height="340" as="geometry" />
+        </mxCell>
+        <mxCell id="p2" value="Fetch the next page of ReportConfig  (keyset by Id)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="210" width="440" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="p3" value="Bulk-resolve the page's hierarchy&#10;see data-retrieval / data-fetch-flow.drawio" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="262" width="440" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="p4" value="Create WorkItem rows - one per message to produce&#10;bundling: per payment type  /  per account-or-alias  /  config-only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="320" width="440" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="p5" value="For each WorkItem:   resolve  -&gt;  assemble  -&gt;  insert Outbox row  -&gt;  mark PUBLISHED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="384" width="440" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="p6" value="Advance Run.last_config_id_processed  (its own small transaction)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="240" y="442" width="440" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="relay" value="Relay (runs continuously, separate):&#10;claim PENDING Outbox rows  -&gt;  send to MQ  -&gt;  mark SENT   (sharded / partitioned by report_type)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="200" y="560" width="520" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="queues" value="One IBM MQ queue per report type&#10;CAMT.052B.QUEUE, CAMT.053S.QUEUE, ..." style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="650" width="380" height="46" as="geometry" />
+        </mxCell>
+        <mxCell id="exec" value="Executor consumes and renders the real reports&#10;(dedupes on the message fingerprint)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="732" width="380" height="46" as="geometry" />
+        </mxCell>
+
+        <mxCell id="ee0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="t0" target="p1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="p1" target="p2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="p2" target="p3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="p3" target="p4"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="p4" target="p5"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="p5" target="p6"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee6" value="next page" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="p6" target="p2">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="215" y="462" /><mxPoint x="215" y="230" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ee7" value="Outbox rows (async)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;fontColor=#888888;fontSize=10;" edge="1" parent="1" source="p5" target="relay">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="700" y="407" /><mxPoint x="700" y="540" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="ee8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="relay" target="queues"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="ee9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="queues" target="exec"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="outbox" name="2 - Outbox and delivery">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="a0" value="Message built for a WorkItem" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="320" y="20" width="300" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a1" value="INSERT into Outbox&#10;identity = (trigger_type, config_id, report_type, scope_key, window_start, window_end, execution_id)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="250" y="84" width="440" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="A row with this identity&#10;already exists?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="176" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="tyes" value="UQ_Outbox_Identity violation&#10;= the message is already durably recorded&#10;SELECT the existing row, mark WorkItem PUBLISHED&#10;named success path, NOT an error" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
+          <mxGeometry x="680" y="180" width="260" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="tno" value="Row inserted - the message now 'counts'" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="300" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="a2" value="Relay claims the row  -&gt;  sends to MQ  -&gt;  marks SENT" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="360" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="Pod dies after send,&#10;before mark SENT?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="340" y="420" width="260" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="t2yes" value="Another relay re-sends the same row&#10;-&gt;  Executor may receive a duplicate" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="680" y="430" width="260" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="a3" value="Message carries its identity tuple as fields&#10;Executor ignores a fingerprint it has already processed&#10;delivery = at-least-once; the fingerprint makes it safe" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
+          <mxGeometry x="250" y="540" width="440" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="tbl" value="execution_id by trigger:&#10;- scheduled = uuid5( SCHEDULED | report_type | frequency | scheduled_time )&#10;    same slot -&gt; dedups (recovery, snapped misfire) ;  distinct firing -&gt; fresh message&#10;- on-demand = minted per request   -&gt;  a re-request is always a new message&#10;- PHT = minted per push   -&gt;  a re-push is always a new message" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontColor=#333333;fontSize=10;align=left;" vertex="1" parent="1">
+          <mxGeometry x="250" y="640" width="440" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="oe0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="a0" target="a1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="a1" target="d1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe2" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="tyes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe3" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="tno"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="tno" target="a2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="a2" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe6" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="t2yes"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe7" value="no (normal)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="a3"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="t2yes" target="a3"><mxGeometry relative="1" as="geometry" /></mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="recovery" name="3 - Recovery">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="790" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="r0" value="Each active Run's pod updates Run.heartbeat_at periodically" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="270" y="20" width="400" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="r1" value="Clustered sweeper scans for Run rows with a stale heartbeat_at&#10;(SCHEDULED runs only)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="260" y="80" width="420" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="r2" value="CAS on heartbeat_at - one restarting pod claims the stale Run" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="260" y="164" width="420" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="d1" value="recovery_attempt_count&#10;over the max?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="330" y="224" width="280" height="84" as="geometry" />
+        </mxCell>
+        <mxCell id="tab" value="Run.status = ABANDONED&#10;alert a human" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="700" y="234" width="220" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="r3a" value="Existing non-terminal WorkItems:&#10;batch-resolve their pages' current data (reResolve)&#10;redrive assemble  -&gt;  Outbox" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
+          <mxGeometry x="70" y="344" width="360" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="r3b" value="Unpaged tail (config_id &gt; last_config_id_processed):&#10;resolve + create fresh, exactly as normal processing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
+          <mxGeometry x="500" y="344" width="380" height="72" as="geometry" />
+        </mxCell>
+        <mxCell id="d2" value="reResolve result for a&#10;known scope_key?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="110" y="450" width="280" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="tfound" value="FOUND&#10;rebuild + publish&#10;(Outbox rule dedupes vs pre-crash work)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="40" y="590" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="tobs" value="CONFIRMED_ABSENT&#10;WorkItem -&gt; OBSOLETE&#10;(not alertable)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="270" y="590" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="tqf" value="QUERY_FAILED&#10;retry; attempt_count -&gt; FAILED_POISON eventually" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="500" y="590" width="210" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="mrg" value="-&gt; continues into the normal per-page loop&#10;(pipeline-flow, page 1)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="520" y="460" width="360" height="44" as="geometry" />
+        </mxCell>
+
+        <mxCell id="re0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="r0" target="r1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="r1" target="r2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="r2" target="d1"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re3" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="tab"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re4" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="r3a"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re5" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="r3b"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="r3a" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re7" value="found" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="tfound"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re8" value="absent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="tobs"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re9" value="failed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="tqf"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="re10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="r3b" target="mrg"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="rnote" value="On-demand / PHT are NOT swept - MQ redelivers the message into a fresh Run; ProcessedInboundMessage skips one that was already fully handled." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="700" width="810" height="40" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="states" name="4 - WorkItem state machine">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="560" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="pending" value="PENDING&#10;(new WorkItem)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="350" y="40" width="180" height="44" as="geometry" />
+        </mxCell>
+        <mxCell id="pub" value="PUBLISHED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="90" y="210" width="180" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="skip" value="SKIPPED_FLAG_OFF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="330" y="210" width="200" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="poison" value="FAILED_POISON" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="600" y="210" width="180" height="54" as="geometry" />
+        </mxCell>
+        <mxCell id="obs" value="OBSOLETE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="350" y="330" width="180" height="54" as="geometry" />
+        </mxCell>
+
+        <mxCell id="se1" value="assemble ok  -&gt;  Outbox row" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="pub"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="se2" value="feature flag off" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="skip"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="se3" value="attempt_count &gt; max (usually bad data)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="poison"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="se4" value="recovery: scope CONFIRMED absent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="obs"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="se5" value="transient failure  -&gt;  retry (attempt_count++)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;endArrow=block;fontColor=#888888;fontSize=10;exitX=1;exitY=0.25;entryX=1;entryY=0.75;" edge="1" parent="1" source="pending" target="pending">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="580" y="30" /><mxPoint x="580" y="94" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="se6" value="manual redrive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;fontColor=#888888;fontSize=10;" edge="1" parent="1" source="poison" target="pending"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <mxCell id="snote" value="PUBLISHED / SKIPPED_FLAG_OFF / OBSOLETE : terminal, not alertable.&#10;FAILED_POISON : terminal, alertable; manual redrive supported.&#10;OBSOLETE needs a CONFIRMED-ABSENT resolve result - a timeout or blip is QUERY_FAILED and just retries." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="430" width="760" height="70" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
