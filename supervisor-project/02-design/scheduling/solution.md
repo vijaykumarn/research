@@ -1,10 +1,14 @@
 # Commander — Scheduling Solution
 
-This is the single reference for how Commander decides when each CAMT report runs and what
-time period it covers.
+This is the reference for how Commander decides when each CAMT report runs and what time
+period it covers.
 
 > Visual: `scheduling-flow.drawio` (draw.io / diagrams.net) — trigger sources, the scheduled
 > job lifecycle, the three window shapes on a timeline, and clustered Quartz across pods.
+
+> Building or reviewing the code? `implementation-reference.md` has the exact config schema,
+> generated cron expressions, admin-endpoint payloads, and edge cases this document leaves out
+> on purpose, to stay readable.
 
 ---
 

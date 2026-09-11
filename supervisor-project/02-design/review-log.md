@@ -308,6 +308,21 @@ owner's request.
   operator workflow: pause → fix → resume → **explicit** backfill of whichever slots the
   business agrees need recovering. No design change — a documentation gap, now closed.
 
+  **`scheduling/how-it-works.md` retired.** Once `scheduling/solution.md` existed as a single
+  self-contained doc covering the same ground in the same accessible register,
+  `how-it-works.md` was redundant — removed. `solution_v01.md` remains, as the one place that
+  still carries implementation detail `solution.md` deliberately leaves out (the full
+  generated-cron table, startup validation rules, the properties/edge-case appendix). No other
+  doc pointed at `how-it-works.md` by path; the mentions above are historical.
+
+  **`scheduling/solution_v01.md` renamed to `scheduling/implementation-reference.md`** (reader
+  feedback: the original goal was one document, and keeping a same-generation `solution_v01.md`
+  alongside `solution.md` read as an unfinished merge rather than a deliberate split). Content
+  unchanged; only the framing and filename changed — it's now explicitly positioned as
+  `solution.md`'s implementation-detail companion, not a parallel design doc, with a pointer
+  each way between the two files. The four cross-references from `message-pipeline/solution_v08.md`
+  and `message-pipeline/how-it-works.md` were repointed to `../scheduling/solution.md`.
+
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just
 > "both publish, distinguished by trigger metadata."

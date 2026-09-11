@@ -105,7 +105,7 @@ event-driven triggers not fitting the batch-launch model).
 single-pod bottleneck.
 
 **Window from the trigger's scheduled fire time**, stored on `Run`, never wall-clock. (The
-per-frequency window rules themselves are specified in `../scheduling/solution_v01.md`.)
+per-frequency window rules themselves are specified in `../scheduling/solution.md`.)
 
 **Feature flags** — checked per report type/config before build and publish; off →
 `SKIPPED_FLAG_OFF`, terminal for that run.
@@ -310,4 +310,4 @@ surface with no stated need behind it yet.
   distinguished by trigger metadata" acceptance, with the Executor team.
 - **[v08]** Confirm or drop the on-demand `frequency = 'NEVER'` skip-and-log guard.
 - Scheduling design (trigger cadences, boundary windows, misfire policy, per-frequency
-  reporting-window calculation, pause/resume) — separate document, `../scheduling/solution_v01.md`.
+  reporting-window calculation, pause/resume) — separate document, `../scheduling/solution.md`.

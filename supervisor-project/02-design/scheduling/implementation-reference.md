@@ -1,7 +1,14 @@
-# Commander — Scheduling Design
+# Commander — Scheduling: Implementation Reference
 
-How the **scheduled** trigger decides *when* each report runs and *what reporting window* a
-firing represents, then hands off to the message-production pipeline
+This is the implementation-level companion to **`solution.md`** — the exact config schema,
+generated cron expressions, Quartz trigger/job wiring, admin-endpoint payloads, startup
+validation rules, and edge cases. Read `solution.md` first for the design and the reasoning;
+come here when building or reviewing the code, for the mechanics `solution.md` leaves out on
+purpose to stay readable. Nothing here should ever contradict `solution.md` — if it does,
+`solution.md` is the one to fix.
+
+Scheduling decides *when* each report runs and *what reporting window* a firing represents,
+then hands off to the message-production pipeline
 (`../message-pipeline/how-it-works.md` / `../message-pipeline/solution_v08.md`). Scheduling owns nothing after a `Run` is
 created.
 
@@ -248,11 +255,18 @@ loader derives the crons. Illustrative:
 ```properties
 commander.scheduling.timezone = Europe/Stockholm
 
-# interval-spec form
+# rolling form — interval defines the fire-time range; each fire's own window is "step back from now"
+commander.scheduling.triggers[1].report-types  = CAMT052B, CAMT052BT
+commander.scheduling.triggers[1].frequency      = EVERY_1_HOUR
+commander.scheduling.triggers[1].days           = MON-FRI
+commander.scheduling.triggers[1].shape          = ROLLING          # ROLLING | BOUNDARY | CALENDAR_DAY
+commander.scheduling.triggers[1].interval       = { first: 01:00, step: 1h, last: 21:00 }
+
+# interval-spec form (BOUNDARY)
 commander.scheduling.triggers[0].report-types  = CAMT052B, CAMT052BT
 commander.scheduling.triggers[0].frequency      = EVERY_2_HOURS
 commander.scheduling.triggers[0].days           = MON-FRI
-commander.scheduling.triggers[0].shape          = BOUNDARY         # ROLLING | BOUNDARY | CALENDAR_DAY
+commander.scheduling.triggers[0].shape          = BOUNDARY
 commander.scheduling.triggers[0].interval       = { first: 03:00, step: 2h, last: 21:00 }
                                                  # implicit leading 00:00 → first window is 00:00–03:00
 
@@ -278,7 +292,8 @@ commander.scheduling.triggers[0].cron-override  = 0 0/2 * ? * MON-FRI
   `days` is the single source of truth for day-of-week; `interval` / `boundaries` for the
   times; `fire-at` for `CALENDAR_DAY`.
 - `interval` and `boundaries` are interchangeable for any `BOUNDARY` shape — use whichever is
-  less to type.
+  less to type. A `ROLLING` shape always uses `interval` (it has no boundary list — `step`
+  alone gives the look-back).
 - **`cron-override`** (optional, TEST): when present the loader registers it verbatim (still
   `.inTimeZone(zone)`) instead of generating. The boundary list still governs the window via
   §4's sequence resolution; the off-grid "skip" guard is disabled under an override. Absent in
@@ -395,7 +410,7 @@ arbitrary window into the scheduled job.
 **`MISFIRE_INSTRUCTION_DO_NOTHING` on every scheduled trigger, all frequencies.** Any slot a
 trigger doesn't fire for on time is **skipped entirely** — no automatic catch-up, ever. The
 trigger simply resumes at its next natural scheduled time and produces that window normally.
-This covers two distinct causes the same way:
+This handles any such gap the same way, whatever caused it — most commonly:
 
 1. **The whole cluster was down across a firing** — a genuine misfire.
 2. **The trigger was deliberately paused across a firing** (§14). Pausing a trigger doesn't
