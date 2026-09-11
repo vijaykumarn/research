@@ -7,9 +7,10 @@ created.
 
 **In scope:** cadences, the reporting-window rules, wiring to Quartz, the deploy-time config
 shape, and the admin endpoints (manual run, backfill, pause/resume, status).
-**Out of scope:** producing the report messages (the pipeline); a schedule-management UI or
-runtime editing of the *timetables themselves* (that stays deploy-time config); holiday
-calendars.
+**Out of scope:** producing the report messages and resolving each config's account/scope data
+(the pipeline and the data-retrieval layer — `../data-retrieval/goal.md`); a
+schedule-management UI or runtime editing of the *timetables themselves* (that stays
+deploy-time config); holiday calendars.
 
 > Visual: `scheduling-flow.drawio` (draw.io / diagrams.net) — page 1 the three trigger
 > sources, page 2 the scheduled job lifecycle (with the misfire / backfill branch), page 3
@@ -64,10 +65,10 @@ Business day = Mon–Fri, no holiday calendar.
 - **`EVERY_30_MIN` / `EVERY_1_HOUR` are rolling.** Cheap, and rolling coincides with
   midnight-anchoring for these two — the first fire of the day is exactly one interval past
   midnight.
-- **`EVERY_2_HOURS` / `EVERY_4_HOURS` are boundary** (decided — §12). The first window of the
-  day starts at **00:00**, so midnight → first fire is covered. This is a **deliberate change
-  from the legacy system**, which leaves 00:00 → 01:00 unreported for these two — a parity
-  note for cutover.
+- **`EVERY_2_HOURS` / `EVERY_4_HOURS` are boundary** (§12). The first window of the
+  day starts at **00:00**, so midnight → first fire is covered. This differs by design from
+  the legacy system, which leaves 00:00 → 01:00 unreported for these two — worth flagging for
+  cutover parity checks.
 - **`NEVER`** is the PHT-only marker (`../message-pipeline/solution_v08.md`) — the config exists so the PHT
   flow can resolve it; no scheduled trigger ever selects it. The scheduled selection predicate
   (`frequency = ?`) structurally excludes it.
@@ -379,19 +380,28 @@ arbitrary window into the scheduled job.
 
 ---
 
-## 9. Misfire — decided: do nothing
+## 9. Misfire policy: do nothing
 
-**`MISFIRE_INSTRUCTION_DO_NOTHING` on every scheduled trigger, all frequencies.** If the
-whole cluster was down across a firing, that slot is **skipped entirely** — no automatic
-catch-up, ever. The trigger simply resumes at its next natural scheduled time and produces
-that window normally.
+**`MISFIRE_INSTRUCTION_DO_NOTHING` on every scheduled trigger, all frequencies.** Any slot a
+trigger doesn't fire for on time is **skipped entirely** — no automatic catch-up, ever. The
+trigger simply resumes at its next natural scheduled time and produces that window normally.
+This covers two distinct causes the same way:
+
+1. **The whole cluster was down across a firing** — a genuine misfire.
+2. **The trigger was deliberately paused across a firing** (§14). Pausing a trigger doesn't
+   throw a misfire event by itself, but when it's later resumed, any of its fire times that
+   fell inside the paused window are already in the past — Quartz evaluates those against the
+   same `MISFIRE_INSTRUCTION_DO_NOTHING`, so they're dropped exactly like a crash-missed slot,
+   not queued up and released on resume. This is the intended operator workflow: pause for an
+   environment issue, fix it, then explicitly `backfill` (§8, §14) whichever slots matter, once
+   it's agreed with the business which ones need recovering.
 
 Consequences, all accepted:
 
 - Sub-daily reports lose one window (30 min to a few hours). The next firing is close behind.
-- **`END_OF_DAY` / `ONCE_PER_DAY` lose a whole day's report** if the cluster is down across
-  06:00 / 21:00. Recommended (not required): an alert — *"no `END_OF_DAY` run recorded for
-  date D"* — so an operator knows to backfill it manually (§8).
+- **`END_OF_DAY` / `ONCE_PER_DAY` lose a whole day's report** if the cluster is down (or the
+  trigger paused) across 06:00 / 21:00. Recommended (not required): an alert — *"no
+  `END_OF_DAY` run recorded for date D"* — so an operator knows to backfill it manually (§8).
 - Any missed slot — including a full day's `END_OF_DAY` — is recovered **only** by an explicit
   manual / batch backfill (§8, *Backfilling missed slots*). Backfills carry the missed slot
   time as `scheduledTimeOverride`, so the window is identical to what the on-time firing would
@@ -403,7 +413,7 @@ manual trigger passes an odd `scheduledTimeOverride`).
 
 **Verify with a real Quartz test** under a clustered `JDBCJobStore` that
 `MISFIRE_INSTRUCTION_DO_NOTHING` on a `CronTrigger` skips the missed firing cleanly and the
-next scheduled fire is unaffected.
+next scheduled fire is unaffected — including the resume-after-pause case above.
 
 ---
 
@@ -439,17 +449,17 @@ At startup, fail loud (or alert) on:
 
 ---
 
-## 12. `EVERY_2_HOURS` / `EVERY_4_HOURS` window shape — decided: boundary
+## 12. `EVERY_2_HOURS` / `EVERY_4_HOURS` window shape: boundary
 
-**Decision: `shape = BOUNDARY`, midnight-anchored.** The first window of the day is
+**`shape = BOUNDARY`, midnight-anchored.** The first window of the day is
 `00:00 → 03:00` (2 h freq) and `00:00 → 05:00` (4 h freq); every later firing is
 previous-boundary → this-boundary as normal.
 
 **Parity note for cutover.** The legacy system runs these two as a rolling look-back, so its
 first window is `01:00 → 03:00` / `01:00 → 05:00` and **00:00 → 01:00 is not reported** each
-day. Commander deliberately closes that gap. This also brings `EVERY_2/4_HOURS` in line with
-CAMT054C's boundary frequencies, which already cover from midnight — removing an
-inconsistency the legacy system carries between the two families.
+day. Commander closes that gap. This also brings `EVERY_2/4_HOURS` in line with CAMT054C's
+boundary frequencies, which already cover from midnight — removing an inconsistency the legacy
+system carries between the two families.
 
 Fire times are unchanged (03:00, 05:00 … 21:00 and 05:00, 09:00, 13:00, 17:00, 21:00), so the
 generated crons in §5 are unaffected; only the window computation moves from rolling to
@@ -516,26 +526,8 @@ still in config; startup reconciliation (§5) removes it only if it's been dropp
 
 ---
 
-## 16. Status of decisions
+## 16. Open items
 
-**Decided:**
-
-- Misfire policy — **do nothing** (§9). Missed slots recovered only by explicit
-  manual/batch backfill (§8, §14).
-- `EVERY_2_HOURS` / `EVERY_4_HOURS` — **boundary**, first window anchored to `00:00` (§12) — a
-  deliberate divergence from the legacy system's rolling behaviour (parity note for cutover).
-- `EIGHT_TIMES_PER_DAY` boundaries — `03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00`
-  (§2), a config value that can be revised in a later release (edit + redeploy).
-- Crons are **generated** from the declarative spec, not hand-written (§5, §6). A raw
-  `cron-override` exists for TEST only.
-- **Pause / resume ships in v1**, alongside manual-run and backfill, as admin endpoints (§14).
-- DST — spring-forward boundary → shift forward; fall-back boundary → first occurrence;
-  transition-day windows are calendar windows, not fixed durations (§4).
-
-- Business timezone — `Europe/Stockholm`.
-
-**Still to confirm / verify (implementation, not architecture):**
-
-- The 8 `EIGHT_TIMES_PER_DAY` times and the DST rule — final sign-off from the business.
-- A Quartz test that `MISFIRE_INSTRUCTION_DO_NOTHING` skips a missed `CronTrigger` firing
-  cleanly and the next fire is unaffected.
+- **A Quartz test** confirming `MISFIRE_INSTRUCTION_DO_NOTHING` skips a missed `CronTrigger`
+  firing cleanly under a clustered `JDBCJobStore`, the next scheduled fire is unaffected, and
+  the same holds for a trigger resumed after a pause that spanned one or more fire times (§9).

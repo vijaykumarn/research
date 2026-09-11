@@ -61,9 +61,9 @@ first run of the day reaches back to 00:00.
 - 21:00 run → covers 18:00–21:00.
 
 Used for the "N times a day" notification reports (`FOUR_TIMES_PER_DAY`,
-`EIGHT_TIMES_PER_DAY`, `ONCE_PER_DAY`) **and, now, the every-2-hours / every-4-hours intraday
-reports** — so their first run of the day covers from midnight (00:00–03:00 / 00:00–05:00),
-not from an hour in.
+`EIGHT_TIMES_PER_DAY`, `ONCE_PER_DAY`) and the every-2-hours / every-4-hours intraday reports —
+so their first run of the day covers from midnight (00:00–03:00 / 00:00–05:00), not from an
+hour in.
 
 ### Shape 3 — Calendar-day ("all of yesterday")
 
@@ -87,7 +87,7 @@ CAMT054D).
 | CAMT054C | 4× / 8× a day | Boundary | fixed times ending 21:00, weekdays | since the previous checkpoint |
 | CAMT053S, CAMT053E, CAMT054D | End of day | Calendar-day | 06:00, Tue–Sat | the whole previous calendar day |
 
-Two housekeeping points:
+Three housekeeping points:
 
 - **Timezone.** Every time above is in one configured business timezone. All the window maths
   happens in that zone, then converts to absolute time for the message.
@@ -95,6 +95,10 @@ Two housekeeping points:
   (PHT) flow and must never be picked up by the scheduler. They carry a special frequency
   value (`NEVER`) that no schedule matches, so they're excluded automatically — no special
   code.
+- **A behaviour difference from the legacy system, worth flagging for cutover.** The system
+  being replaced treats every-2-hours / every-4-hours as a rolling look-back, so its first run
+  of the day only reaches back to 01:00 — 00:00–01:00 goes unreported. Commander closes that
+  gap by anchoring these two to midnight, same as the other boundary frequencies.
 
 ---
 
@@ -131,7 +135,8 @@ simple one-report-type schedules.
 3. It hands the pipeline: **report type · frequency · scheduled time · window start · window
    end**, and creates one tracking record ("Run") for that firing.
 4. The pipeline does everything else — find the matching report configurations, resolve their
-   data, build the messages, publish them.
+   account/scope data (its own concern, described in `../data-retrieval/goal.md`), build the
+   messages, publish them.
 
 ---
 
@@ -166,12 +171,20 @@ and removes anything orphaned, *before* the scheduler starts running.
 
 ---
 
-## 8. What happens if the whole system was down
+## 8. What happens when a firing is missed
 
-If every server was down across a scheduled firing, that firing is *missed*. **The policy is:
-do nothing.** The missed slot is skipped entirely; the timetable simply resumes at its next
-natural scheduled time and produces that window normally. There is **no automatic catch-up**,
-for any report — frequent or end-of-day.
+A firing can be missed for two different reasons, and both are handled the *same* way:
+
+- **Every server was down across it** — a genuine outage.
+- **An operator deliberately paused that schedule** across it — for example, to protect
+  production while an environment issue is being worked. Pausing doesn't queue the firings it
+  covers for later; when the schedule is resumed, they're simply gone, exactly as if the
+  cluster had been down for that stretch.
+
+**The policy either way is: do nothing.** The missed slot is skipped entirely; the timetable
+simply resumes at its next natural scheduled time and produces that window normally. There is
+**no automatic catch-up**, for any report — frequent or end-of-day — and none released in a
+burst when a paused schedule is resumed.
 
 - **Frequent reports (sub-daily):** losing one window is cheap; the next run is minutes away.
 - **End-of-day reports:** a missed 06:00 firing means that day's statement is not produced. It
@@ -183,33 +196,15 @@ a job for one or more missed slots, passing the missed slot times as parameters.
 produces exactly the window that firing would have produced on time, and is idempotent — a
 backfill for a slot that already ran is a harmless no-op.
 
-Deliberately *not* doing: any automatic replay of missed slots. Recovery of a gap is always a
-conscious operator action, never a surprise burst of catch-up runs after an outage.
+This is also the intended shape of a deliberate pause: pause the schedule to ride out the
+environment issue, fix it, resume the schedule for firings going forward, then — once it's
+agreed with the business which slots actually need recovering — backfill exactly those, by
+their slot times. Nothing is auto-replayed in either case.
 
 ---
 
-## 9. Open points for the architect
+## 9. What's left before build
 
-Almost everything is now settled. Two items await a final business sign-off (not a redesign):
-
-| # | Item | Status |
-|---|---|---|
-| 1 | **Daylight-saving rules** — a boundary time that doesn't exist (spring) shifts forward to the next real instant; one that happens twice (autumn) uses the earlier occurrence; transition-day windows are calendar windows, so their elapsed length can be an hour short/long twice a year. | Rules chosen; confirm they match business expectation. |
-| 2 | **The eight fire times** for the 8×-a-day notification report — starting value `03:00, 06:00, 08:00, 10:00, 12:00, 15:00, 18:00, 21:00`, revisable later via config. | Confirm the starting set. |
-
-Plus one build-time check: a test that the scheduler skips a missed firing cleanly under the
-"do nothing" policy.
-
-**Decided since the last review:**
-
-- **Missed-firing policy — do nothing.** No automatic catch-up; missed slots are recovered by
-  an explicit backfill (§8) — a first-class admin capability, not a workaround.
-- **Every-2-hours / every-4-hours window — boundary, anchored to midnight.** First run of the
-  day covers 00:00–03:00 / 00:00–05:00. This deliberately differs from the legacy system,
-  which leaves 00:00–01:00 unreported for these two — a **parity note for cutover**.
-- **Cron is generated** from the plain-terms config, never hand-written (a raw override exists
-  for test only).
-- **Pause / resume is in v1**, alongside run and backfill, as admin endpoints.
-
-Everything else — the three shapes, the single-worker model, concurrent runs, the
-scheduler/pipeline split, restart reconciliation — is settled.
+One check, not a design decision: a test that the scheduler skips a missed firing cleanly
+under the "do nothing" policy — for both a true misfire (§8) and a trigger resumed after being
+paused across one or more of its fire times (§8).
