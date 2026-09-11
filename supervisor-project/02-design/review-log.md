@@ -280,8 +280,19 @@ owner's request.
     `UQ_Run_ScheduledSlot` index added to `solution_v08.md`.
   - **Business timezone:** `Europe/Stockholm`.
 
-  Left to confirm (implementation/sign-off, not design): final business OK on the 8 times and
-  the DST rule; a Quartz test that `DO_NOTHING` skips a missed firing cleanly.
+  **Closed since:** the business confirmed both the DST resolution rules and the
+  `EIGHT_TIMES_PER_DAY` fire times / window rule (00:00→03:00, 03:00→06:00, … as designed) — no
+  change to either. Only a build-time Quartz test remains (`solution_v01.md` §16).
+
+  **Misfire policy generalised to cover a deliberate pause, not just a crash** (reader
+  feedback on `how-it-works.md` §8: does an operator pausing a trigger for a production issue
+  also cause missed firings?). Answer: yes, and it was already handled by the same
+  `MISFIRE_INSTRUCTION_DO_NOTHING` mechanism — a paused trigger's fire times that fall due
+  while it's paused are in the past by the time it's resumed, so Quartz applies the same
+  do-nothing instruction to them. §9 now states this explicitly as a second cause alongside
+  "cluster was down", and §8/how-it-works.md's missed-firing section documents the intended
+  operator workflow: pause → fix → resume → **explicit** backfill of whichever slots the
+  business agrees need recovering. No design change — a documentation gap, now closed.
 
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just
