@@ -286,3 +286,59 @@ owner's request.
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just
 > "both publish, distinguished by trigger metadata."
+
+---
+
+## Data-retrieval — separate track
+
+The "resolve" step in `message-pipeline/how-it-works.md` (§4, *Scheduled*, step 3) — turning a
+set of `ReportConfig`s into fully-resolved input for message assembly — is its own concern
+with its own decisions (staged reads vs. join; SQL Server IN-list/parameter limits; keyset
+pagination; batched recipient lookup; pure row→tree assembly; the shared core across
+scheduled/on-demand/PHT; the tri-state resolve result recovery needs). Split into
+`02-design/data-retrieval/` (sibling of `message-pipeline/` and `scheduling/`).
+
+- `data-retrieval/goal.md` — clean-slate brief.
+- `data-retrieval/solution_v01.md` — external agent's 3-option pass (per-level batch queries /
+  stored proc multi-resultset / flattened join); recommends per-level batch queries.
+- `data-retrieval/solution_v02.md` — **the design**. Commits to **staged per-level batch reads
+  + a pure in-memory assembler** (the shape the legacy `bikili` code runs, hardened):
+  6 fixed round trips per page (keyset config page → scopes via plain `IN` → payment types /
+  accounts / aliases via a `dbo.BigIntIdList` TVP → recipients via plain `IN`), then a
+  DB-free assembler. Two modes on one core: `resolvePage` (fresh) and `reResolve` (recovery) —
+  where **`reResolve` = `resolvePage` + a per-`WorkItem` presence check** yielding the
+  `FOUND / CONFIRMED_ABSENT / QUERY_FAILED` tri-state, so there is no second query
+  implementation. Output is a **typed `ResolvedConfig` record** (not an opaque map), carrying
+  both surrogate `id` and business `configId`. PHT balance merge is a pure post-resolution
+  function. One schema addition: the TVP type (chunked-`IN` is the fallback). Proposes a
+  concrete `scope_key` grammar to sign off jointly with the pipeline.
+
+  Open: `scope_key` grammar sign-off; TVP schema-addition approval; page-size tuning;
+  whether `reResolve` needs recipient data.
+
+- **Diagrams (`.drawio`, mono).** `data-retrieval/data-fetch-flow.drawio` (six staged reads /
+  dependency view / recovery tri-state), `scheduling/scheduling-flow.drawio` (trigger sources
+  / scheduled job lifecycle / window shapes / clustered Quartz), and
+  `message-pipeline/pipeline-flow.drawio` (end-to-end / outbox + delivery / recovery /
+  `WorkItem` state machine). Visualisation only — no design change; each solution doc links its
+  file near the top.
+
+- **Efficiency pass on `solution_v02.md`** (in-conversation). Added: the required-indexes
+  table (headline: composite `ReportConfig (ReportType, ReportFrequency, IsActive, Id)`);
+  the `OPTION (RECOMPILE)` note on the TVP stages; the *Bounding page width* guards
+  (`max-accounts-per-config`, `page-row-hard-limit`). Expanded §11 "Why not the alternatives"
+  with per-config-anti-pattern round-trip maths and the "when would this win" line for
+  Options B and C.
+
+- **External review of `solution_v02.md` against `goal.md`** (folded in). Three points:
+  (1) recovery's Level-1 fetch-by-surrogate-`Id` had no defined query — §2 now states it
+  explicitly as a third Level-1 variant (`Id IN (:ids)`, **no `IsActive` filter**).
+  (2) the tri-state didn't cover a config that went inactive since the original run — §2's
+  `reResolve` now branches per config: config deleted **or** `IsActive = 0` →
+  `CONFIRMED_ABSENT` for every ref under it, with a distinct log reason.
+  (3) the assembler's account/alias mutual-exclusivity check said "throw" while the sibling
+  account-ceiling guard "isolates" — §5 now makes the violation a per-config poison item
+  (isolated, page continues), consistent with the ceiling guard, plus a note that a high
+  violation *rate* signals a staged-read bug not bad data. Also softened the
+  `OPTION (RECOMPILE)` claim: it fixes row count, not value-distribution stats — fine for the
+  straight-join shapes here, revisit if a future TVP query adds a second selective predicate.

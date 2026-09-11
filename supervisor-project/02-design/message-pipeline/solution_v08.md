@@ -6,6 +6,9 @@ This pass carries one deliberate **removal** (the cross-trigger `ScopeClaim`), t
 schema fix** (`frequency` + `window_start`/`window_end` columns + the scheduled slot-uniqueness
 index the scheduling design already relies on), plus two small data-model clarifications.
 
+> Visual: `pipeline-flow.drawio` (draw.io / diagrams.net) — page 1 the end-to-end flow, page 2
+> the outbox + delivery guarantee, page 3 recovery, page 4 the `WorkItem` state machine.
+
 ---
 
 ## [v08] What changed and why

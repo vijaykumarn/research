@@ -11,6 +11,10 @@ shape, and the admin endpoints (manual run, backfill, pause/resume, status).
 runtime editing of the *timetables themselves* (that stays deploy-time config); holiday
 calendars.
 
+> Visual: `scheduling-flow.drawio` (draw.io / diagrams.net) — page 1 the three trigger
+> sources, page 2 the scheduled job lifecycle (with the misfire / backfill branch), page 3
+> the three window shapes on a timeline, page 4 clustered Quartz across pods.
+
 ---
 
 ## 1. What a firing produces
