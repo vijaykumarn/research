@@ -306,8 +306,12 @@ surface with no stated need behind it yet.
 
 - Concrete `ProcessedInboundMessage` retention — read off the actual
   backout-queue/max-redelivery configuration for `CAMT.ONDEMAND.QUEUE` and `CAMT.PHT.QUEUE`.
-- Confirm the no-ordering-guarantee contract point, and the "two semantically-equal messages
-  distinguished by trigger metadata" acceptance, with the Executor team.
+- Confirm with the Executor team: **that they dedupe on the message fingerprint at all** — the
+  assumption the entire at-least-once-delivery guarantee rests on (see "What still guards
+  against a genuine double-publish" above) — plus the no-ordering-guarantee contract point, and
+  the "two semantically-equal messages distinguished by trigger metadata" acceptance.
 - **[v08]** Confirm or drop the on-demand `frequency = 'NEVER'` skip-and-log guard.
-- Scheduling design (trigger cadences, boundary windows, misfire policy, per-frequency
-  reporting-window calculation, pause/resume) — separate document, `../scheduling/solution.md`.
+
+Scheduling (trigger cadences, boundary windows, misfire policy, per-frequency reporting-window
+calculation, pause/resume) is no longer open here — it's a finished, separate document,
+`../scheduling/solution.md`.
