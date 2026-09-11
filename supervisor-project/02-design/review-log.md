@@ -284,6 +284,20 @@ owner's request.
   `EIGHT_TIMES_PER_DAY` fire times / window rule (00:00→03:00, 03:00→06:00, … as designed) — no
   change to either. Only a build-time Quartz test remains (`solution_v01.md` §16).
 
+  **`requestRecovery` flipped from `false` to `true` (reader feedback on `solution.md` §8:
+  "are you confident there will be no crash between a pod picking up a firing and creating its
+  `Run` row? shouldn't we use `requestRecovery(true)`?").** The original `false` choice assumed
+  Quartz's own trigger-level recovery would *race* the pipeline's heartbeat sweeper. On
+  inspection that assumption doesn't hold: the scheduling job's own logic never attempts to
+  resume in-progress work — it only ever creates a `Run` or, if one already exists, exits via
+  the same `UQ_Run_ScheduledSlot` no-op used for any duplicate firing. So a Quartz-recovered
+  re-fire and the sweeper cover **disjoint** failure windows (before vs. after `Run` creation)
+  rather than competing, and `requestRecovery(false)` was leaving a real gap: a pod dying in
+  the moment between picking up a firing and committing its `Run` row was silently lost —
+  neither the misfire policy (nothing became due) nor the sweeper (no `Run` row to find) could
+  see it. Flipped to `true`; `solution_v01.md` §5/§9/§10, `solution.md` §4/§8, and
+  `how-it-works.md` §7 updated; a matching Quartz test added to `solution_v01.md` §16.
+
   **Misfire policy generalised to cover a deliberate pause, not just a crash** (reader
   feedback on `how-it-works.md` §8: does an operator pausing a trigger for a production issue
   also cause missed firings?). Answer: yes, and it was already handled by the same

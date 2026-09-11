@@ -254,7 +254,7 @@
                 <mxCell id="cev4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="pick" target="idle3" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="cn1" value="requestRecovery(false): if Pod 2 dies mid-run, Quartz does NOT re-fire. The pipeline&#39;s stale-Run sweeper resumes that specific Run from its checkpoint." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
+                <mxCell id="cn1" value="requestRecovery(true): if Pod 2 dies before creating the Run, Quartz&#39;s own clustering re-fires the job (safely - it creates the Run, or exits if one exists). If Pod 2 dies after, the pipeline&#39;s stale-Run sweeper resumes that Run from its checkpoint instead - the two never overlap." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="90" y="490" width="720" height="34" as="geometry"/>
                 </mxCell>
                 <mxCell id="cn2" value="Startup: spring.quartz.auto-startup=false  -&gt;  reconcile and remove orphaned triggers from a prior config  -&gt;  then start the scheduler." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">

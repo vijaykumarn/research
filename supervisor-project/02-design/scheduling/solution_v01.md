@@ -188,10 +188,20 @@ in a Java subclass. The loader builds **one `JobDetail` per `(report_type, frequ
 loop (14 total), each in its report type's group (e.g. `camt052b-group`).
 
 - `storeDurably(true)`.
-- `requestRecovery(false)` — **the pipeline's own recovery owns interrupted runs** (heartbeat
-  + stale-`Run` sweeper, `../message-pipeline/solution_v08.md`). Quartz's `requestRecovery` re-fires the
-  *trigger* (a fresh firing); the sweeper resumes the *specific `Run`* from its checkpoint.
-  Two overlapping mechanisms would race — use only the sweeper.
+- **`requestRecovery(true)`** — closes a gap the pipeline's own recovery structurally cannot
+  see. If a pod dies **before** it manages to create the pipeline `Run` row for a firing,
+  there is no `Run` for the heartbeat/stale-`Run` sweeper (`../message-pipeline/solution_v08.md`)
+  to find — that firing would otherwise be silently lost, and it isn't covered by the misfire
+  policy either (§9 is about a slot that never became due; this is a slot that *did* fire and
+  started, but didn't finish starting). Quartz's own clustered recovery re-fires the job once
+  the dead node's ownership is detected, with the *original* scheduled fire time preserved, and
+  it does not compete with the sweeper: if the `Run` doesn't exist yet, the recovered firing
+  creates it and proceeds exactly as a fresh firing would; if the `Run` already exists (the pod
+  died *after* creating it, mid-processing), the recovered firing hits `UQ_Run_ScheduledSlot`
+  and exits cleanly — the same named no-op as any other duplicate firing (§7) — without ever
+  attempting to resume in-progress work itself. **Resuming a `Run` past creation remains
+  solely the sweeper's job**; Quartz's recovery only ever creates-or-exits, so the two
+  mechanisms cover disjoint failure windows rather than racing.
 
 **Grouping is config sugar.** A config entry may list several `report-types`; the loader
 **expands** it into one independent registration per report type at startup. Nothing fans out
@@ -415,22 +425,36 @@ manual trigger passes an odd `scheduledTimeOverride`).
 `MISFIRE_INSTRUCTION_DO_NOTHING` on a `CronTrigger` skips the missed firing cleanly and the
 next scheduled fire is unaffected — including the resume-after-pause case above.
 
+**Distinct from `requestRecovery(true)` (§5).** This section is about a slot that never
+*became* due while nothing was watching for it (cluster down, or paused). A pod dying mid-way
+through a firing it already started is a different situation — the trigger did fire, the job
+just didn't finish — and is covered by Quartz's own job-recovery mechanism, not the misfire
+instruction.
+
 ---
 
 ## 10. Interaction with pipeline recovery
 
-- Scheduling creates the `Run` as the job's **first step**, before any config resolution — so
-  a firing that fails partway still leaves a trace the recovery sweeper can act on. A firing
-  that fails *before* `Run` creation (e.g. a bad config) is caught by startup validation
-  (§11), not left silent.
+- Scheduling creates the `Run` as the job's **first durable step**, before any config
+  resolution — so a firing that fails partway through processing still leaves a trace the
+  recovery sweeper can act on.
+- A pod that dies **before** it manages to create that `Run` row leaves no trace for the
+  sweeper — the sweeper only ever examines existing `Run` rows, so it structurally cannot see
+  this case. That gap is closed by `requestRecovery(true)` (§5): Quartz's own clustered
+  recovery re-fires the job once the dead node's ownership is detected, using the original
+  scheduled fire time, and it either creates the `Run` fresh (if it never existed) or hits
+  `UQ_Run_ScheduledSlot` and exits cleanly (if it already did) — never both, and never in a way
+  that competes with the sweeper.
 - The `Run` row records `frequency` and the resolved `(window_start, window_end)` — the
   sweeper resuming a run past `last_config_id_processed` reads `frequency` to know which config
   set to keep paging and the stored window to stamp onto new `WorkItem`s (no recompute).
-- The recovery sweeper (`../message-pipeline/solution_v08.md`) owns interrupted scheduled runs — heartbeat
-  detection, CAS ownership, resume-from-checkpoint. Scheduling adds nothing here beyond
-  creating the `Run` and letting `requestRecovery(false)` keep Quartz out of it.
+- The recovery sweeper (`../message-pipeline/solution_v08.md`) remains the **sole** owner of
+  resuming a `Run` that already exists — heartbeat detection, CAS ownership,
+  resume-from-checkpoint. Quartz's own recovery never attempts that; it only ever
+  creates-or-exits (above).
 - `UQ_Run_ScheduledSlot` makes a repeated firing for the same slot fail fast at `Run` creation
-  instead of after a full resolve pass; the job treats that violation as a clean no-op (§7).
+  instead of after a full resolve pass; the job treats that violation as a clean no-op (§7) —
+  the same mechanism that makes Quartz's own job-recovery re-fire safe.
 
 ---
 
@@ -531,3 +555,7 @@ still in config; startup reconciliation (§5) removes it only if it's been dropp
 - **A Quartz test** confirming `MISFIRE_INSTRUCTION_DO_NOTHING` skips a missed `CronTrigger`
   firing cleanly under a clustered `JDBCJobStore`, the next scheduled fire is unaffected, and
   the same holds for a trigger resumed after a pause that spanned one or more fire times (§9).
+- **A Quartz test** confirming `requestRecovery(true)` (§5, §10) behaves as designed under a
+  killed pod: if the `Run` row was never created, the recovered firing creates it and processes
+  normally; if it already existed, the recovered firing hits `UQ_Run_ScheduledSlot` and exits
+  cleanly — no duplicate `Run`, no double-published message either way.

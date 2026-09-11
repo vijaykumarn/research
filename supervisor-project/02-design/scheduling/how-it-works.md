@@ -161,9 +161,13 @@ is accepted; the goal is to generate as fast as possible. (There's a monitoring 
 somehow fires twice (a timer hiccup), the second one notices a run already exists and exits
 quietly — not an error.
 
-**Recovery is the pipeline's job, not the scheduler's.** If a server dies mid-run, the
-pipeline's own recovery mechanism picks it up and continues from where it stopped. The
-scheduler deliberately does *not* also try to re-fire — two recovery mechanisms would fight.
+**Recovery is split two ways, by how far a crash got.** If a server dies after a run has
+already started being tracked, the pipeline's own recovery mechanism picks it up and continues
+from where it stopped. If a server dies in the brief moment *before* that tracking even began,
+the scheduler's own clustering re-fires that one firing — safely, because it either starts the
+tracking fresh or, if tracking turns out to have already begun, simply recognizes that and
+stops (the same harmless no-op as a repeated firing, above). The two never step on the same
+work.
 
 **Restart safety.** On redeploy, the timer store can hold stale timetables from the previous
 configuration. At startup the application reconciles what's stored against the current config
@@ -173,28 +177,33 @@ and removes anything orphaned, *before* the scheduler starts running.
 
 ## 8. What happens when a firing is missed
 
-A firing can be missed for two different reasons, and both are handled the *same* way:
+A firing can go missing for more reasons than just an outage — every server being down is the
+most common, but it also happens if an operator has deliberately paused that schedule, for
+example to protect production while an environment issue is being worked. Whatever the cause,
+it's handled the *same* way, and an operator always has the same option regardless of why a
+slot was missed: trigger it explicitly. Pausing doesn't queue the firings it covers for later;
+when the schedule is resumed, they're simply gone, exactly as if the system had been down for
+that stretch.
 
-- **Every server was down across it** — a genuine outage.
-- **An operator deliberately paused that schedule** across it — for example, to protect
-  production while an environment issue is being worked. Pausing doesn't queue the firings it
-  covers for later; when the schedule is resumed, they're simply gone, exactly as if the
-  cluster had been down for that stretch.
-
-**The policy either way is: do nothing.** The missed slot is skipped entirely; the timetable
+**The automatic policy is: do nothing.** The missed slot is skipped entirely; the timetable
 simply resumes at its next natural scheduled time and produces that window normally. There is
 **no automatic catch-up**, for any report — frequent or end-of-day — and none released in a
 burst when a paused schedule is resumed.
 
-- **Frequent reports (sub-daily):** losing one window is cheap; the next run is minutes away.
-- **End-of-day reports:** a missed 06:00 firing means that day's statement is not produced. It
-  must be **backfilled by an explicit manual trigger**. Recommended: an alert — *"no
-  end-of-day run for date D"* — so an operator knows to do that.
+**Backfilling** is a first-class capability, available for **any** missed slot, sub-daily or
+end-of-day alike — there's no restriction on which ones can be recovered. An operator (or a
+small admin endpoint) can fire a job for one or more missed slots, passing the missed slot
+times as parameters. Each backfill produces exactly the window that firing would have produced
+on time, and is idempotent — a backfill for a slot that already ran is a harmless no-op.
 
-**Backfilling** is a first-class capability: an operator (or a small admin endpoint) can fire
-a job for one or more missed slots, passing the missed slot times as parameters. Each backfill
-produces exactly the window that firing would have produced on time, and is idempotent — a
-backfill for a slot that already ran is a harmless no-op.
+Whether it's *worth* doing depends on the report:
+
+- **Frequent, sub-daily reports** are often left alone: the next run is only minutes away and
+  will cover the following window regardless, so the cost of one skipped window is low. But if
+  that specific window matters, it can be backfilled exactly the same way as any other slot.
+- **End-of-day reports** are different: nothing else will produce that day's statement, so a
+  missed one is normally worth backfilling explicitly. Recommended: an alert — *"no end-of-day
+  run for date D"* — so an operator knows to do that.
 
 This is also the intended shape of a deliberate pause: pause the schedule to ride out the
 environment issue, fix it, resume the schedule for firings going forward, then — once it's
