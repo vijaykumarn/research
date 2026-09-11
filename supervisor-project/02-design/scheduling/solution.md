@@ -228,15 +228,21 @@ One authenticated, admin-only surface, all keyed on `(report type, frequency)`:
   combination — so whichever firing gets there first creates it, and any other firing for the
   exact same slot finds it already exists, recognizes the duplicate, and exits without doing
   any further work. Nothing is built or published twice, and it isn't treated as a failure.
-- **A crashed pod's work is recovered automatically, split two ways by how far it got.** If a
-  pod dies *after* creating a firing's tracking record but before finishing, the pipeline's own
-  recovery mechanism (heartbeat-based, watching for stale runs) resumes it from where it
-  stopped. If a pod dies in the brief moment *before* it manages to create that record at all,
-  the scheduler's own clustering — which already knows how to re-fire a job left mid-execution
-  by a node that died — picks the firing back up and starts it fresh. The two mechanisms never
-  compete: the second one either creates the record (because it never existed) or recognizes
-  one already exists and exits cleanly (the same no-op above) — it never tries to resume
-  in-progress work itself. Either way, nothing is silently lost.
+- **A crashed pod's work is always recovered — which mechanism handles it just depends on
+  timing.**
+  - **Pod dies after the tracking record was created, but before the run finished:** the
+    pipeline's own recovery mechanism notices (it watches for runs that have gone quiet) and
+    resumes from where the pod stopped.
+  - **Pod dies in the instant before it could even create that record:** the scheduler's own
+    clustering re-fires that one firing on a live pod, and it starts fresh — since, as far as
+    anything can tell, that firing never actually began.
+
+  These two never clash, because the re-fired attempt always does the same first check: try to
+  create the tracking record. If it doesn't exist yet, create it and carry on normally. If it
+  already exists — meaning the original pod actually got further than expected — just notice
+  that and stop (the same harmless no-op as a repeated firing, above). A re-fired attempt never
+  tries to pick up half-finished work itself; only the pipeline's own recovery mechanism does
+  that. Either way, nothing is silently lost.
 - **Redeploys clean up after themselves.** If a previous configuration's timetables are still
   registered, the application removes them at startup, before the scheduler starts running —
   so nothing fires against a stale schedule.
