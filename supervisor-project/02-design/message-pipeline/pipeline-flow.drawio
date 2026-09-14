@@ -21,10 +21,10 @@
         <mxCell id="p3" value="Bulk-resolve the page's hierarchy&#10;see data-retrieval / data-fetch-flow.drawio" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="240" y="262" width="440" height="46" as="geometry" />
         </mxCell>
-        <mxCell id="p4" value="Create WorkItem rows - one per message to produce&#10;bundling: per payment type  /  per account-or-alias  /  config-only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="p4" value="Create WorkItem rows - one per message to produce&#10;bundling: one per config (all payment types)  /  per account-or-alias  /  config-only" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="240" y="320" width="440" height="52" as="geometry" />
         </mxCell>
-        <mxCell id="p5" value="For each WorkItem:   resolve  -&gt;  assemble  -&gt;  insert Outbox row  -&gt;  mark PUBLISHED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="p5" value="For each WorkItem:   resolve  -&gt;  assemble  -&gt;  insert Outbox row  -&gt;  mark BUILT" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="240" y="384" width="440" height="46" as="geometry" />
         </mxCell>
         <mxCell id="p6" value="Advance Run.last_config_id_processed  (its own small transaction)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
@@ -64,7 +64,7 @@
   </diagram>
 
   <diagram id="outbox" name="2 - Outbox and delivery">
-    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="800" math="0" shadow="0">
+    <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="960" pageHeight="980" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -78,26 +78,26 @@
         <mxCell id="d1" value="A row with this identity&#10;already exists?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="340" y="176" width="260" height="90" as="geometry" />
         </mxCell>
-        <mxCell id="tyes" value="UQ_Outbox_Identity violation&#10;= the message is already durably recorded&#10;SELECT the existing row, mark WorkItem PUBLISHED&#10;named success path, NOT an error" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
+        <mxCell id="tyes" value="UQ_Outbox_Identity violation&#10;= the message is already durably recorded&#10;SELECT the existing row, mark WorkItem BUILT&#10;named success path, NOT an error" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
           <mxGeometry x="680" y="180" width="260" height="100" as="geometry" />
         </mxCell>
         <mxCell id="tno" value="Row inserted - the message now 'counts'" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="270" y="300" width="400" height="40" as="geometry" />
         </mxCell>
-        <mxCell id="a2" value="Relay claims the row  -&gt;  sends to MQ  -&gt;  marks SENT" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+        <mxCell id="a2" value="Relay claims a row" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="270" y="360" width="400" height="40" as="geometry" />
         </mxCell>
         <mxCell id="d2" value="Pod dies after send,&#10;before mark SENT?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="340" y="420" width="260" height="90" as="geometry" />
+          <mxGeometry x="340" y="600" width="260" height="90" as="geometry" />
         </mxCell>
         <mxCell id="t2yes" value="Another relay re-sends the same row&#10;-&gt;  Executor may receive a duplicate" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="680" y="430" width="260" height="70" as="geometry" />
+          <mxGeometry x="680" y="610" width="260" height="70" as="geometry" />
         </mxCell>
         <mxCell id="a3" value="Message carries its identity tuple as fields&#10;Executor ignores a fingerprint it has already processed&#10;delivery = at-least-once; the fingerprint makes it safe" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" vertex="1" parent="1">
-          <mxGeometry x="250" y="540" width="440" height="70" as="geometry" />
+          <mxGeometry x="250" y="720" width="440" height="70" as="geometry" />
         </mxCell>
         <mxCell id="tbl" value="execution_id by trigger:&#10;- scheduled = uuid5( SCHEDULED | report_type | frequency | scheduled_time )&#10;    same slot -&gt; dedups (recovery, snapped misfire) ;  distinct firing -&gt; fresh message&#10;- on-demand = minted per request   -&gt;  a re-request is always a new message&#10;- PHT = minted per push   -&gt;  a re-push is always a new message" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;fontColor=#333333;fontSize=10;align=left;" vertex="1" parent="1">
-          <mxGeometry x="250" y="640" width="440" height="110" as="geometry" />
+          <mxGeometry x="250" y="820" width="440" height="110" as="geometry" />
         </mxCell>
 
         <mxCell id="oe0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="a0" target="a1"><mxGeometry relative="1" as="geometry" /></mxCell>
@@ -105,11 +105,11 @@
         <mxCell id="oe2" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="tyes"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="oe3" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d1" target="tno"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="oe4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="tno" target="a2"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="oe5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="a2" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="oe5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="send" target="d2"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="oe6" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="t2yes"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="oe7" value="no (normal)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="d2" target="a3"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="oe8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" edge="1" parent="1" source="t2yes" target="a3"><mxGeometry relative="1" as="geometry" /></mxCell>
-      </root>
+      <mxCell id="d3" value="Report-type flag on?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1"><mxGeometry x="340" y="420" width="260" height="80" as="geometry" /></mxCell><mxCell id="send" value="Sends to MQ -&gt; marks SENT" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1"><mxGeometry x="270" y="530" width="400" height="40" as="geometry" /></mxCell><mxCell id="park" value="Marked SKIPPED_FLAG_OFF&#10;not sent, not retried, not an alert - final" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1"><mxGeometry x="660" y="420" width="250" height="60" as="geometry" /></mxCell><mxCell id="oe9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="a2" target="d3" edge="1"><mxGeometry relative="1" as="geometry" /></mxCell><mxCell id="oe10" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d3" target="send" edge="1"><mxGeometry relative="1" as="geometry" /></mxCell><mxCell id="oe11" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d3" target="park" edge="1"><mxGeometry relative="1" as="geometry" /></mxCell></root>
     </mxGraphModel>
   </diagram>
 
@@ -184,21 +184,17 @@
         <mxCell id="pending" value="PENDING&#10;(new WorkItem)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="350" y="40" width="180" height="44" as="geometry" />
         </mxCell>
-        <mxCell id="pub" value="PUBLISHED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="90" y="210" width="180" height="54" as="geometry" />
-        </mxCell>
-        <mxCell id="skip" value="SKIPPED_FLAG_OFF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="330" y="210" width="200" height="54" as="geometry" />
+        <mxCell id="built" value="BUILT" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="260" y="210" width="180" height="54" as="geometry" />
         </mxCell>
         <mxCell id="poison" value="FAILED_POISON" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
-          <mxGeometry x="600" y="210" width="180" height="54" as="geometry" />
+          <mxGeometry x="500" y="210" width="180" height="54" as="geometry" />
         </mxCell>
         <mxCell id="obs" value="OBSOLETE" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" vertex="1" parent="1">
           <mxGeometry x="350" y="330" width="180" height="54" as="geometry" />
         </mxCell>
 
-        <mxCell id="se1" value="assemble ok  -&gt;  Outbox row" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="pub"><mxGeometry relative="1" as="geometry" /></mxCell>
-        <mxCell id="se2" value="feature flag off" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="skip"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="se1" value="assemble ok  -&gt;  Outbox row" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="built"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="se3" value="attempt_count &gt; max (usually bad data)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="poison"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="se4" value="recovery: scope CONFIRMED absent" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" edge="1" parent="1" source="pending" target="obs"><mxGeometry relative="1" as="geometry" /></mxCell>
         <mxCell id="se5" value="transient failure  -&gt;  retry (attempt_count++)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;endArrow=block;fontColor=#888888;fontSize=10;exitX=1;exitY=0.25;entryX=1;entryY=0.75;" edge="1" parent="1" source="pending" target="pending">
@@ -208,8 +204,8 @@
         </mxCell>
         <mxCell id="se6" value="manual redrive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;fontColor=#888888;fontSize=10;" edge="1" parent="1" source="poison" target="pending"><mxGeometry relative="1" as="geometry" /></mxCell>
 
-        <mxCell id="snote" value="PUBLISHED / SKIPPED_FLAG_OFF / OBSOLETE : terminal, not alertable.&#10;FAILED_POISON : terminal, alertable; manual redrive supported.&#10;OBSOLETE needs a CONFIRMED-ABSENT resolve result - a timeout or blip is QUERY_FAILED and just retries." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" vertex="1" parent="1">
-          <mxGeometry x="70" y="430" width="760" height="70" as="geometry" />
+        <mxCell id="snote" value="BUILT / OBSOLETE : terminal, not alertable.&#10;FAILED_POISON : terminal, alertable; manual redrive supported.&#10;OBSOLETE needs a CONFIRMED-ABSENT resolve result - a timeout or blip is QUERY_FAILED and just retries.&#10;No flag-related WorkItem state: the flag is checked before a run starts, and again by the relay - never in between (solution.md, §8)." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="70" y="430" width="760" height="90" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -2,194 +2,194 @@
     <diagram id="triggers" name="1 - Three trigger sources">
         <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="900" pageHeight="540" math="0" shadow="0">
             <root>
-                <mxCell id="0"/>
-                <mxCell id="1" parent="0"/>
-                <mxCell id="src1" value="Scheduled trigger&#xa;Quartz CronTrigger fires&#xa;clustered - one pod picks it up" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="60" width="250" height="64" as="geometry"/>
+                <mxCell id="0" />
+                <mxCell id="1" parent="0" />
+                <mxCell id="src1" value="Scheduled trigger&#10;Quartz CronTrigger fires&#10;clustered - one pod picks it up" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="60" width="250" height="64" as="geometry" />
                 </mxCell>
-                <mxCell id="src2" value="On-demand&#xa;JMS on CAMT.ONDEMAND.QUEUE&#xa;carries a list of ConfigIds" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="325" y="60" width="250" height="64" as="geometry"/>
+                <mxCell id="src2" value="On-demand&#10;JMS on CAMT.ONDEMAND.QUEUE&#10;carries a list of ConfigIds" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="325" y="60" width="250" height="64" as="geometry" />
                 </mxCell>
-                <mxCell id="src3" value="PHT balance push&#xa;JMS on CAMT.PHT.QUEUE&#xa;fixed-width body, account balances" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="610" y="60" width="250" height="64" as="geometry"/>
+                <mxCell id="src3" value="PHT balance push&#10;JMS on CAMT.PHT.QUEUE&#10;fixed-width body, account balances" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="60" width="250" height="64" as="geometry" />
                 </mxCell>
-                <mxCell id="mid1" value="Scheduling job&#xa;- take scheduled fire time (not wall-clock)&#xa;- window function: scheduled_time + window&#xa;  (rolling / boundary / calendar-day)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="180" width="250" height="84" as="geometry"/>
+                <mxCell id="mid1" value="Scheduling job&#10;- take scheduled fire time (not wall-clock)&#10;- window function: scheduled_time + window&#10;  (rolling / boundary / calendar-day)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="180" width="250" height="84" as="geometry" />
                 </mxCell>
-                <mxCell id="mid2" value="On-demand listener&#xa;- mint execution_id&#xa;- window = requested period" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="325" y="180" width="250" height="84" as="geometry"/>
+                <mxCell id="mid2" value="On-demand listener&#10;- mint execution_id&#10;- window = requested period" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="325" y="180" width="250" height="84" as="geometry" />
                 </mxCell>
-                <mxCell id="mid3" value="PHT listener&#xa;- resolve recipient: Agreement -&gt; AgreementVersion(ACTIVE) -&gt; AgreementScope&#xa;- mint acceptance_id&#xa;- merge pushed balances" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="610" y="180" width="250" height="84" as="geometry"/>
+                <mxCell id="mid3" value="PHT listener&#10;- resolve recipient: Agreement -&gt; AgreementVersion(ACTIVE) -&gt; AgreementScope&#10;- mint acceptance_id&#10;- merge pushed balances" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="180" width="250" height="84" as="geometry" />
                 </mxCell>
-                <mxCell id="handoff" value="Start ONE pipeline Run for ONE report type&#xa;report_type . frequency . scheduled_time . window_start . window_end&#xa;(frequency is NULL for on-demand / PHT)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="230" y="320" width="440" height="70" as="geometry"/>
+                <mxCell id="handoff" value="Start ONE pipeline Run for ONE report type&#10;report_type . frequency . scheduled_time . window_start . window_end&#10;(frequency is NULL for on-demand / PHT)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="230" y="320" width="440" height="70" as="geometry" />
                 </mxCell>
-                <mxCell id="pipe" value="Message-production pipeline&#xa;see pipeline-flow.drawio" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="310" y="430" width="280" height="50" as="geometry"/>
+                <mxCell id="pipe" value="Message-production pipeline&#10;see pipeline-flow.drawio" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="430" width="280" height="50" as="geometry" />
                 </mxCell>
                 <mxCell id="note1" value="Scheduling owns nothing once the Run exists." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="430" width="240" height="40" as="geometry"/>
+                    <mxGeometry x="40" y="430" width="240" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="te1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="src1" target="mid1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="te2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="src2" target="mid2" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="te3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="src3" target="mid3" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="te4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="mid1" target="handoff" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="te5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="mid2" target="handoff" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="te6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="mid3" target="handoff" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="te7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="handoff" target="pipe" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
             </root>
         </mxGraphModel>
     </diagram>
     <diagram id="lifecycle" name="2 - Scheduled job lifecycle">
-        <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="960" pageHeight="670" math="0" shadow="0">
+        <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="960" pageHeight="800" math="0" shadow="0">
             <root>
-                <mxCell id="0"/>
-                <mxCell id="1" parent="0"/>
+                <mxCell id="0" />
+                <mxCell id="1" parent="0" />
                 <mxCell id="s0" value="CronTrigger fires at a boundary / interval instant" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="300" y="30" width="340" height="44" as="geometry"/>
+                    <mxGeometry x="300" y="30" width="340" height="44" as="geometry" />
                 </mxCell>
-                <mxCell id="s1" value="Take the scheduled fire time&#xa;(or scheduledTimeOverride from the job data map)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="290" y="110" width="360" height="54" as="geometry"/>
+                <mxCell id="s1" value="Take the scheduled fire time&#10;(or scheduledTimeOverride from the job data map)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="290" y="110" width="360" height="54" as="geometry" />
                 </mxCell>
                 <mxCell id="s2" value="Window function  -&gt;  scheduled_time, (window_start, window_end)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="290" y="194" width="360" height="44" as="geometry"/>
+                    <mxGeometry x="290" y="194" width="360" height="44" as="geometry" />
                 </mxCell>
                 <mxCell id="s3" value="Create the Run  (first step, before any config work)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="290" y="268" width="360" height="44" as="geometry"/>
+                    <mxGeometry x="290" y="268" width="360" height="44" as="geometry" />
                 </mxCell>
-                <mxCell id="d1" value="Run already exists for&#xa;(report_type, frequency, scheduled_time) ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="310" y="342" width="320" height="96" as="geometry"/>
+                <mxCell id="d1" value="Run already exists for&#10;(report_type, frequency, scheduled_time) ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="310" y="342" width="320" height="96" as="geometry" />
                 </mxCell>
-                <mxCell id="t1" value="UQ_Run_ScheduledSlot violation:&#xa;log, exit job cleanly&#xa;(no JobExecutionException)&#xa;existing Run = COMPLETED / IN_PROGRESS / ABANDONED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="690" y="340" width="250" height="100" as="geometry"/>
+                <mxCell id="t1" value="UQ_Run_ScheduledSlot violation:&#10;log, exit job cleanly&#10;(no JobExecutionException)&#10;existing Run = COMPLETED / IN_PROGRESS / ABANDONED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="690" y="340" width="250" height="100" as="geometry" />
                 </mxCell>
-                <mxCell id="s4" value="Page ReportConfig WHERE report_type=? AND frequency=? AND is_active=1&#xa;-&gt; hand each page to the pipeline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="270" y="474" width="400" height="54" as="geometry"/>
+                <mxCell id="s4" value="Page ReportConfig WHERE report_type=? AND frequency=? AND is_active=1&#10;-&gt; hand each page to the pipeline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="590" width="400" height="54" as="geometry" />
                 </mxCell>
-                <mxCell id="s5" value="Pipeline produces the messages&#xa;see pipeline-flow.drawio" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="320" y="564" width="300" height="44" as="geometry"/>
+                <mxCell id="s5" value="Pipeline produces the messages&#10;see pipeline-flow.drawio" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="320" y="680" width="300" height="44" as="geometry" />
                 </mxCell>
-                <mxCell id="m1" value="Cluster was down&#xa;across a firing?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="40" y="104" width="210" height="80" as="geometry"/>
+                <mxCell id="m1" value="Cluster was down&#10;across a firing?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="104" width="210" height="80" as="geometry" />
                 </mxCell>
-                <mxCell id="m2" value="Misfire = DO_NOTHING&#xa;that slot is skipped entirely&#xa;no automatic catch-up, ever" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="214" width="230" height="76" as="geometry"/>
+                <mxCell id="m2" value="Misfire = DO_NOTHING&#10;that slot is skipped entirely&#10;no automatic catch-up, ever" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="214" width="230" height="76" as="geometry" />
                 </mxCell>
-                <mxCell id="m3" value="Backfill later:&#xa;POST /admin/scheduling/run  or  /backfill&#xa;scheduledTimeOverride = missed slot time" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="320" width="230" height="84" as="geometry"/>
+                <mxCell id="m3" value="Backfill later:&#10;POST /admin/scheduling/run  or  /backfill&#10;scheduledTimeOverride = missed slot time" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="320" width="230" height="84" as="geometry" />
                 </mxCell>
                 <mxCell id="le0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="s0" target="s1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="le1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="s1" target="s2" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="le2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="s2" target="s3" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="le3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="s3" target="d1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="le4" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d1" target="t1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="le5" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d1" target="s4" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="le5" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d1" target="d2" edge="1">
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="le6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="s4" target="s5" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="lm1" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="m1" target="m2" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="lm2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="m2" target="m3" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="lm3" value="re-enters here" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;fontColor=#888888;fontSize=10;" parent="1" source="m3" target="s1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-            </root>
+            <mxCell id="d2" value="Report-type feature flag on?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1"><mxGeometry x="320" y="470" width="300" height="80" as="geometry" /></mxCell><mxCell id="t2" value="Run marked SKIPPED_FLAG_OFF&#10;no configs paged, nothing handed to the pipeline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1"><mxGeometry x="700" y="480" width="240" height="80" as="geometry" /></mxCell><mxCell id="le7" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d2" target="t2" edge="1"><mxGeometry relative="1" as="geometry" /></mxCell><mxCell id="le8" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d2" target="s4" edge="1"><mxGeometry relative="1" as="geometry" /></mxCell></root>
         </mxGraphModel>
     </diagram>
     <diagram id="windows" name="3 - The three window shapes">
         <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="820" pageHeight="600" math="0" shadow="0">
             <root>
-                <mxCell id="0"/>
-                <mxCell id="1" parent="0"/>
-                <mxCell id="la" value="Rolling&#xa;EVERY_1_HOUR" style="text;html=1;align=left;verticalAlign=middle;fontColor=#333333;fontSize=11;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="70" width="150" height="50" as="geometry"/>
+                <mxCell id="0" />
+                <mxCell id="1" parent="0" />
+                <mxCell id="la" value="Rolling&#10;EVERY_1_HOUR" style="text;html=1;align=left;verticalAlign=middle;fontColor=#333333;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="70" width="150" height="50" as="geometry" />
                 </mxCell>
                 <mxCell id="ra0" value="..." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;fontColor=#888888;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="190" y="76" width="50" height="40" as="geometry"/>
+                    <mxGeometry x="190" y="76" width="50" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="ra1" value="11:00-12:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="240" y="76" width="120" height="40" as="geometry"/>
+                    <mxGeometry x="240" y="76" width="120" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="ra2" value="12:00-13:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="360" y="76" width="120" height="40" as="geometry"/>
+                    <mxGeometry x="360" y="76" width="120" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="ra3" value="13:00-14:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="480" y="76" width="120" height="40" as="geometry"/>
+                    <mxGeometry x="480" y="76" width="120" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="ra4" value="..." style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;fontColor=#888888;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="600" y="76" width="50" height="40" as="geometry"/>
+                    <mxGeometry x="600" y="76" width="50" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="capa" value="window = (fire - interval, fire] ;  a new window every interval, on the hour ;  first window 00:00 -&gt; 01:00" style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="190" y="124" width="460" height="30" as="geometry"/>
+                    <mxGeometry x="190" y="124" width="460" height="30" as="geometry" />
                 </mxCell>
-                <mxCell id="lb" value="Boundary&#xa;FOUR_TIMES_PER_DAY" style="text;html=1;align=left;verticalAlign=middle;fontColor=#333333;fontSize=11;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="220" width="150" height="50" as="geometry"/>
+                <mxCell id="lb" value="Boundary&#10;FOUR_TIMES_PER_DAY" style="text;html=1;align=left;verticalAlign=middle;fontColor=#333333;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="220" width="150" height="50" as="geometry" />
                 </mxCell>
                 <mxCell id="rb0" value="00:00-10:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="190" y="226" width="200" height="40" as="geometry"/>
+                    <mxGeometry x="190" y="226" width="200" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="rb1" value="10:00-13:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="390" y="226" width="90" height="40" as="geometry"/>
+                    <mxGeometry x="390" y="226" width="90" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="rb2" value="13:00-18:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="480" y="226" width="120" height="40" as="geometry"/>
+                    <mxGeometry x="480" y="226" width="120" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="rb3" value="18:00-21:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="600" y="226" width="90" height="40" as="geometry"/>
+                    <mxGeometry x="600" y="226" width="90" height="40" as="geometry" />
                 </mxCell>
-                <mxCell id="rb4" value="21:00-24:00&#xa;(not reported)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;fontColor=#888888;fontSize=9;" parent="1" vertex="1">
-                    <mxGeometry x="690" y="226" width="90" height="40" as="geometry"/>
+                <mxCell id="rb4" value="21:00-24:00&#10;(not reported)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;fontColor=#888888;fontSize=9;" parent="1" vertex="1">
+                    <mxGeometry x="690" y="226" width="90" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="capb" value="fires AT each boundary ;  window = (previous boundary, this boundary] ;  implicit leading 00:00 covers the first window ;  boundary times are config" style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="190" y="274" width="540" height="40" as="geometry"/>
+                    <mxGeometry x="190" y="274" width="540" height="40" as="geometry" />
                 </mxCell>
-                <mxCell id="lc" value="Calendar-day&#xa;END_OF_DAY" style="text;html=1;align=left;verticalAlign=middle;fontColor=#333333;fontSize=11;fontStyle=1;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="380" width="150" height="50" as="geometry"/>
+                <mxCell id="lc" value="Calendar-day&#10;END_OF_DAY" style="text;html=1;align=left;verticalAlign=middle;fontColor=#333333;fontSize=11;fontStyle=1;" parent="1" vertex="1">
+                    <mxGeometry x="30" y="380" width="150" height="50" as="geometry" />
                 </mxCell>
                 <mxCell id="rc0" value="previous calendar day    00:00 -&gt; 24:00" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="190" y="386" width="300" height="40" as="geometry"/>
+                    <mxGeometry x="190" y="386" width="300" height="40" as="geometry" />
                 </mxCell>
-                <mxCell id="rc1" value="fire 06:00 next day&#xa;(Tue-Sat)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="540" y="386" width="180" height="40" as="geometry"/>
+                <mxCell id="rc1" value="fire 06:00 next day&#10;(Tue-Sat)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="540" y="386" width="180" height="40" as="geometry" />
                 </mxCell>
                 <mxCell id="rce" value="produces" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="rc0" target="rc1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="capc" value="window = the WHOLE previous calendar day ;  23 h or 25 h on a DST transition day (intended)" style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="190" y="434" width="540" height="30" as="geometry"/>
+                    <mxGeometry x="190" y="434" width="540" height="30" as="geometry" />
                 </mxCell>
                 <mxCell id="wnote" value="All times Europe/Stockholm. Business day Mon-Fri (Tue-Sat for END_OF_DAY). 21:00 -&gt; 24:00 is never reported by any frequency." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="30" y="510" width="740" height="40" as="geometry"/>
+                    <mxGeometry x="30" y="510" width="740" height="40" as="geometry" />
                 </mxCell>
             </root>
         </mxGraphModel>
@@ -197,68 +197,68 @@
     <diagram id="clustered" name="4 - Clustered Quartz across pods">
         <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="620" math="0" shadow="0">
             <root>
-                <mxCell id="0"/>
-                <mxCell id="1" parent="0"/>
+                <mxCell id="0" />
+                <mxCell id="1" parent="0" />
                 <mxCell id="store" value="SQL Server - Quartz JDBCJobStore  (shared by all pods)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="280" y="30" width="360" height="44" as="geometry"/>
+                    <mxGeometry x="280" y="30" width="360" height="44" as="geometry" />
                 </mxCell>
-                <mxCell id="pod1" value="Pod 1&#xa;scheduler running (clustered)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="90" y="130" width="180" height="60" as="geometry"/>
+                <mxCell id="pod1" value="Pod 1&#10;scheduler running (clustered)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="130" width="180" height="60" as="geometry" />
                 </mxCell>
-                <mxCell id="pod2" value="Pod 2&#xa;scheduler running (clustered)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="360" y="130" width="180" height="60" as="geometry"/>
+                <mxCell id="pod2" value="Pod 2&#10;scheduler running (clustered)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="360" y="130" width="180" height="60" as="geometry" />
                 </mxCell>
-                <mxCell id="pod3" value="Pod 3&#xa;scheduler running (clustered)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="630" y="130" width="180" height="60" as="geometry"/>
+                <mxCell id="pod3" value="Pod 3&#10;scheduler running (clustered)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="630" y="130" width="180" height="60" as="geometry" />
                 </mxCell>
                 <mxCell id="ce1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;endArrow=none;" parent="1" edge="1">
                     <mxGeometry relative="1" as="geometry">
-                        <mxPoint x="190" y="132" as="sourcePoint"/>
-                        <mxPoint x="460" y="76" as="targetPoint"/>
+                        <mxPoint x="190" y="132" as="sourcePoint" />
+                        <mxPoint x="460" y="76" as="targetPoint" />
                         <Array as="points">
-                            <mxPoint x="190" y="102"/>
-                            <mxPoint x="460" y="102"/>
+                            <mxPoint x="190" y="102" />
+                            <mxPoint x="460" y="102" />
                         </Array>
                     </mxGeometry>
                 </mxCell>
                 <mxCell id="ce2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;endArrow=none;" parent="1" source="pod2" target="store" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="ce3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;endArrow=none;" parent="1" source="pod3" target="store" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="ev" value="Trigger due:  CAMT052B / EVERY_30_MIN  @ 12:30" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="280" y="250" width="360" height="44" as="geometry"/>
+                    <mxGeometry x="280" y="250" width="360" height="44" as="geometry" />
                 </mxCell>
-                <mxCell id="pick" value="JDBCJobStore hands the firing to exactly ONE pod&#xa;(row lock on the trigger record)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="270" y="320" width="380" height="54" as="geometry"/>
+                <mxCell id="pick" value="JDBCJobStore hands the firing to exactly ONE pod&#10;(row lock on the trigger record)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="270" y="320" width="380" height="54" as="geometry" />
                 </mxCell>
                 <mxCell id="exec" value="Pod 2 executes this firing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="360" y="412" width="180" height="44" as="geometry"/>
+                    <mxGeometry x="360" y="412" width="180" height="44" as="geometry" />
                 </mxCell>
                 <mxCell id="idle1" value="Pod 1 - idle for this firing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="90" y="412" width="180" height="44" as="geometry"/>
+                    <mxGeometry x="90" y="412" width="180" height="44" as="geometry" />
                 </mxCell>
                 <mxCell id="idle3" value="Pod 3 - idle for this firing" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="630" y="412" width="180" height="44" as="geometry"/>
+                    <mxGeometry x="630" y="412" width="180" height="44" as="geometry" />
                 </mxCell>
                 <mxCell id="cev1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="ev" target="pick" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="cev2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;" parent="1" source="pick" target="exec" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="cev3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="pick" target="idle1" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
                 <mxCell id="cev4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="pick" target="idle3" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                    <mxGeometry relative="1" as="geometry" />
                 </mxCell>
-                <mxCell id="cn1" value="requestRecovery(true): if Pod 2 dies before creating the Run, Quartz&#39;s own clustering re-fires the job (safely - it creates the Run, or exits if one exists). If Pod 2 dies after, the pipeline&#39;s stale-Run sweeper resumes that Run from its checkpoint instead - the two never overlap." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="90" y="490" width="720" height="34" as="geometry"/>
+                <mxCell id="cn1" value="requestRecovery(true): if Pod 2 dies before creating the Run, Quartz's own clustering re-fires the job (safely - it creates the Run, or exits if one exists). If Pod 2 dies after, the pipeline's stale-Run sweeper resumes that Run from its checkpoint instead - the two never overlap." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
+                    <mxGeometry x="90" y="490" width="720" height="34" as="geometry" />
                 </mxCell>
                 <mxCell id="cn2" value="Startup: spring.quartz.auto-startup=false  -&gt;  reconcile and remove orphaned triggers from a prior config  -&gt;  then start the scheduler." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
-                    <mxGeometry x="90" y="530" width="720" height="34" as="geometry"/>
+                    <mxGeometry x="90" y="530" width="720" height="34" as="geometry" />
                 </mxCell>
             </root>
         </mxGraphModel>

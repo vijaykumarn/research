@@ -16,8 +16,8 @@ period it covers.
 
 Scheduling has exactly one job: on a timetable, wake up and say *"produce this report type,
 covering this time window."* It then hands that instruction off to the message-production
-pipeline and steps away — it doesn't build the report, resolve any account data, or track
-whether the run succeeded. Those are separate concerns, documented in
+pipeline and steps away — it doesn't build the report, resolve any payment-type data (accounts
+or aliases), or track whether the run succeeded. Those are separate concerns, documented in
 `../message-pipeline/` and `../data-retrieval/` respectively.
 
 Every firing boils down to five facts, handed to the pipeline as one package:
@@ -64,17 +64,16 @@ converts to absolute time for the outgoing message.
 
 A few notes:
 
-- **21:00 → 24:00 is never reported** by any frequency — the day's last checkpoint is 21:00.
+- **21:00 → 24:00 is never reported same-day** by any rolling or boundary frequency — their
+  last checkpoint is 21:00.
 - **Every-2-hours / every-4-hours anchor to midnight**, not to their first fire time. This is a
   deliberate difference from the legacy system, which treats these two as a rolling look-back
   and leaves 00:00–01:00 unreported each day — worth flagging during cutover comparisons.
 - **`Never`** is the marker for configurations that are recipients of the external
   balance-push flow, which is triggered by an inbound message, not a timetable. No schedule
   ever picks a `Never` config up.
-- The 8× and 4× and once-a-day cadences all include a 21:00 firing, but each covers a
-  different window — a config only ever belongs to one cadence, so they never collide.
-- Every time, boundary, and day pattern above is configuration — changing any of it is a
-  redeploy, not a live edit (§5).
+- **Everything in this table is configuration, not fixed code** — the fire times, the
+  boundaries, the days. Changing any of it means a redeploy, not a live edit (§5).
 
 ---
 
@@ -88,31 +87,48 @@ A few notes:
    these are the same instant; the distinction matters for a manual backfill or a recovered
    run, where the report must cover the period it was meant to, not whenever it actually ran.
 3. It creates one tracking record (a "Run") as its **first durable action** — precisely so
-   that anything that goes wrong afterward leaves a trace recovery can act on (§8) — and hands
-   the pipeline the five facts from §1. The pipeline takes it from there — finding the matching
+   that anything that goes wrong afterward leaves a trace recovery can act on (§8).
+4. It checks a **feature flag for that report type** — is this job allowed to run at all. If
+   the flag is off, the Run is marked skipped right there and nothing is handed to the
+   pipeline — no configurations are resolved, nothing is built. If the flag is on, it hands the
+   pipeline the five facts from §1. The pipeline takes it from there — finding the matching
    configurations, resolving their data, building and publishing the messages.
 
-**Daylight saving.** The business timezone shifts clocks forward an hour each spring and back
-an hour each autumn — this is handled, and the rules are confirmed with the business: a
-boundary that falls in the spring gap (a time that doesn't occur that day) shifts forward to
-the next real instant; a boundary that falls in the autumn overlap (a time that occurs twice)
-uses the earlier occurrence and fires once.
+   A skipped Run still occupies that slot — getting that report later needs an explicit trigger
+   (§7), the same as recovering any other slot the automatic path didn't produce (§6).
 
-For example: if a boundary were set at 02:30, on the spring day when clocks jump straight from
-02:00 to 03:00, 02:30 never happens — that boundary fires at 03:00 instead, the first real
-moment after the jump. On the autumn day, clocks fall back from 03:00 to 02:00, so the hour
-02:00–03:00 happens twice; a 02:30 boundary is reached on the first pass through it and fires
-there once — not again an hour later, when the clock reaches 02:30 a second time. (None of
-today's boundaries actually sit between 02:00 and 03:00 — the earliest is 03:00 — so this
-doesn't come up in practice yet, but the rule is ready for whenever one does.)
+**Daylight saving.** Clocks skip an hour forward each spring and repeat an hour each autumn. A
+fire time that falls in the skipped stretch shifts forward to the next real moment; one that
+falls in the repeated stretch fires once, at its first occurrence — not again the second time
+around.
 
-Separately, a window can span a transition without a boundary sitting inside the gap or
-overlap at all — for example the every-2-hours schedule's first window, 00:00–03:00, or the
-end-of-day window covering the whole previous day. On the spring day that stretch is really
-about an hour shorter than usual, because one hour on the clock never happened; on the autumn
-day it's about an hour longer, because one hour happened twice. Nothing corrects for this — a
-window is just "from this clock time to that one," so its actual length naturally shifts by an
-hour on those two days a year. That's expected, not a bug.
+For example, a 02:30 boundary: in spring, clocks jump straight from 02:00 to 03:00, so 02:30
+never happens — that boundary fires at 03:00 instead. In autumn, clocks fall back from 03:00 to
+02:00, so 02:30 happens twice — the boundary only fires on the first pass. (No Boundary
+checkpoint sits in 02:00–03:00 today, so this hasn't come up in practice yet — but the rule is
+ready for whenever one does.)
+
+**Rolling frequencies hit this every year** — `EVERY_1_HOUR` fires at 02:00, `EVERY_30_MIN` at
+02:00 and 02:30, both inside that stretch. The same rule applies, but with a different result:
+a rolling window is just "fire time minus the interval," so the fire next to the transition
+ends up with a window that starts and ends at the same instant — an empty report, not a wrong
+one.
+
+| Frequency | Fires inside 02:00–03:00 | Spring (hour is skipped) | Autumn (hour repeats) |
+|---|---|---|---|
+| `EVERY_1_HOUR` | 02:00 | Doesn't happen — the next fire is the regular 03:00, whose window collapses to zero length | Fires once, at the first pass; the regular 03:00 fire picks up from there |
+| `EVERY_30_MIN` | 02:00, 02:30 | Neither happens — same as above | Each fires once, at its first pass |
+
+Either way: one report comes out empty, and one hour of real activity around the transition
+simply isn't captured that day. Nothing catches it automatically; backfill it explicitly if
+it's ever needed.
+
+A window's actual length can also shift by an hour on a transition day, even with no boundary
+inside the gap or overlap — take the end-of-day window, normally a full 24 hours. On the spring
+day it's only 23 hours, because the day it covers lost an hour to the clock jump; on the autumn
+day it's 25 hours, because that day gained an hour back. Nothing corrects for this — the window
+is simply "midnight to midnight" by the clock, whatever that comes out to in elapsed time that
+day. Expected, not a bug.Is 
 
 ---
 
@@ -182,23 +198,15 @@ trigger it explicitly.
 **The automatic policy is: do nothing.** The missed slot is skipped entirely; the timetable
 simply resumes at its next natural time and produces that window normally. Firings paused over
 aren't queued up and released in a burst on resume — they're just gone, the same as if the
-system had been down for that stretch. There is no automatic catch-up, ever, for any report.
+system had been down for that stretch. There is no automatic catch-up, ever, for any report —
+for a missed end-of-day, where nothing else will produce that day's statement, an alert is
+recommended so an operator knows to act.
 
 Recovering a missed slot is always a deliberate action, and it's available for **any** missed
 slot, sub-daily or end-of-day alike — there's no restriction on which ones can be backfilled.
 An operator (or a small admin endpoint) fires the schedule again, passing the missed slot's
 time, and it produces exactly the window that firing would have produced on time. This is
 idempotent — re-issuing a backfill for a slot that already ran is a harmless no-op.
-
-Whether it's *worth* doing depends on the report:
-
-- **Frequent, sub-daily reports** — a missed 12:30–13:00 window, say — are often left alone,
-  because the next run is only minutes away and will cover the following window regardless; the
-  cost of one skipped window is low. But if that specific window matters, it can be backfilled
-  exactly the same way as any other slot — nothing about the frequency makes it ineligible.
-- **End-of-day reports** are different: nothing else will produce that day's statement, so a
-  missed one is normally worth backfilling explicitly. An alert is recommended so an operator
-  knows to act.
 
 This is also the intended shape of a deliberate pause: pause the schedule to ride out the
 issue, fix it, resume for firings going forward, then — once it's agreed which slots actually
@@ -234,12 +242,12 @@ One authenticated, admin-only surface, all keyed on `(report type, frequency)`:
   any further work. Nothing is built or published twice, and it isn't treated as a failure.
 - **A crashed pod's work is always recovered — which mechanism handles it just depends on
   timing.**
-  - **Pod dies after the tracking record was created, but before the run finished:** the
-    pipeline's own recovery mechanism notices (it watches for runs that have gone quiet) and
-    resumes from where the pod stopped.
   - **Pod dies in the instant before it could even create that record:** the scheduler's own
     clustering re-fires that one firing on a live pod, and it starts fresh — since, as far as
     anything can tell, that firing never actually began.
+  - **Pod dies after the tracking record was created, but before the run finished:** the
+    pipeline's own recovery mechanism notices (it watches for runs that have gone quiet) and
+    resumes from where the pod stopped.
 
   These two never clash, because the re-fired attempt always does the same first check: try to
   create the tracking record. If it doesn't exist yet, create it and carry on normally. If it

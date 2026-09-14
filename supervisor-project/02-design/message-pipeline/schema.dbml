@@ -1,0 +1,123 @@
+// Commander — Message Pipeline DB model
+// Source of truth: message-pipeline/solution_v08.md ("Table schemas"). Plain-language design
+// is in message-pipeline/solution.md. Paste this file's contents into https://dbdiagram.io to
+// render it, or open it with any DBML-aware tool.
+//
+// Scope: the four tables the message pipeline owns. `config_id` (WorkItem, Outbox) is
+// conceptually ReportConfig.Id, owned by the CAMT schema / data-retrieval track — it is a
+// plain BIGINT here, not a declared foreign key, matching the actual DDL.
+
+Enum trigger_type {
+  SCHEDULED
+  ONDEMAND
+  PHT
+}
+
+Enum run_status {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+  SKIPPED_FLAG_OFF  // report-type flag was off at Run creation — terminal, not alertable
+}
+
+Enum work_item_status {
+  PENDING
+  RESOLVED     // Option B checkpoint only — unused by the recommended Option A design
+  BUILT        // message is in the Outbox; "produced", not "delivered"
+  FAILED_POISON
+  OBSOLETE
+}
+
+Enum outbox_status {
+  PENDING
+  SENT
+  SKIPPED_FLAG_OFF  // report-type flag was off when the relay reached this row — terminal, same as SENT
+}
+
+Table Run {
+  run_id                    uniqueidentifier [pk]
+  trigger_type              trigger_type     [not null]
+  report_type                varchar(20)      [not null]
+  frequency                  varchar(20)      [note: "the schedule's frequency; NULL for ONDEMAND/PHT"]
+  scheduled_time              datetime2        [not null]
+  window_start                datetime2        [not null, note: 'reporting window, frozen at Run creation']
+  window_end                  datetime2        [not null]
+  execution_id                uniqueidentifier [note: 'NULL for SCHEDULED; required for ONDEMAND/PHT']
+  status                      run_status       [not null]
+  owner_pod                   varchar(100)     [not null]
+  started_at                  datetime2        [not null]
+  heartbeat_at                 datetime2        [not null, note: 'watchdog resumes a stale-heartbeat SCHEDULED run']
+  last_config_id_processed     bigint           [note: 'paging checkpoint']
+  recovery_attempt_count       int              [not null, default: 0]
+
+  indexes {
+    (report_type, frequency, scheduled_time) [unique, name: 'UQ_Run_ScheduledSlot', note: 'filtered: WHERE trigger_type = SCHEDULED']
+  }
+
+  Note: '''
+    CK_Run_ExecutionId_Required: trigger_type = 'SCHEDULED' OR execution_id IS NOT NULL
+    CK_Run_Frequency_Required:   trigger_type <> 'SCHEDULED' OR frequency IS NOT NULL
+
+    A repeated firing hitting UQ_Run_ScheduledSlot is a named success path, not an error —
+    the job logs it and exits cleanly rather than throwing to Quartz.
+  '''
+}
+
+Table WorkItem {
+  work_item_id   uniqueidentifier [pk]
+  run_id         uniqueidentifier [not null, ref: > Run.run_id]
+  config_id      bigint           [not null, note: 'ReportConfig.Id — not a declared FK here']
+  scope_key      varchar(200)     [not null, note: 'ACC|.. / ALS|.. / PT|.. / CFG — see data-retrieval']
+  window_start   datetime2        [not null]
+  window_end     datetime2        [not null]
+  status         work_item_status [not null]
+  attempt_count  int              [not null, default: 0]
+  last_error     "nvarchar(max)"
+  updated_at     datetime2        [not null]
+
+  indexes {
+    (run_id, config_id, scope_key, window_start, window_end) [unique, name: 'UQ_WorkItem_Identity']
+  }
+
+  Note: 'The to-do list — one row per message Commander intends to produce for this Run.'
+}
+
+Table Outbox {
+  outbox_id      uniqueidentifier [pk]
+  trigger_type   trigger_type     [not null]
+  config_id      bigint           [not null]
+  report_type    varchar(20)      [not null]
+  scope_key      varchar(200)     [not null]
+  window_start   datetime2        [not null]
+  window_end     datetime2        [not null]
+  execution_id   uniqueidentifier [not null, note: 'scheduled: uuid5(SCHEDULED|report_type|frequency|scheduled_time); on-demand/PHT: minted fresh']
+  payload        "nvarchar(max)"  [not null, note: 'the ReportMessage JSON']
+  status         outbox_status    [not null]
+  claimed_by     varchar(100)     [note: 'relay pod that claimed this row']
+  claimed_at     datetime2
+  created_at     datetime2        [not null]
+
+  indexes {
+    (trigger_type, config_id, report_type, scope_key, window_start, window_end, execution_id) [unique, name: 'UQ_Outbox_Identity']
+  }
+
+  Note: '''
+    The outbox tray — the fingerprint (this unique index) is the sole duplicate guard; there is
+    no cross-trigger lock. A UQ_Outbox_Identity violation is a named success path: SELECT the
+    existing row, advance the producing WorkItem to BUILT, done.
+
+    No declared FK back to WorkItem or Run — a row's (config_id, scope_key, window, execution_id)
+    correlates to the WorkItem that produced it, but isn't enforced as a foreign key.
+  '''
+}
+
+Table ProcessedInboundMessage {
+  jms_message_id varchar(200) [pk]
+  processed_at   datetime2    [not null]
+
+  Note: '''
+    Dedup ledger for on-demand / PHT queue redelivery — not related to Run/WorkItem/Outbox by FK.
+    Retention floor must exceed the actual backout/redelivery-limit window configured on
+    CAMT.ONDEMAND.QUEUE and CAMT.PHT.QUEUE (open item — see solution.md §10).
+  '''
+}

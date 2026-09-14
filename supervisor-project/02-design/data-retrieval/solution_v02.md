@@ -6,8 +6,8 @@ message-assembly step.
 
 It is **staged per-level batch reads + a pure in-memory assembler** — the shape the legacy
 `bikili` implementation already runs in production, hardened with batched recipient lookup, an
-explicit recovery mode, and a stated `scope_key` contract. `solution_v01.md`'s Option A is the
-same choice; this document commits to it and fills in the parts left open there.
+explicit recovery mode, and a stated `scope_key` contract. `archive/solution_v01.md`'s Option A
+is the same choice; this document commits to it and fills in the parts left open there.
 
 ---
 
@@ -100,12 +100,18 @@ on, so its grammar must be pinned and shared across the two documents. Proposed:
 |---|---|---|
 | Unbundled — account | `ACC\|{paymentType}\|{clearingNumber}\|{accountNumber}` | that account under a payment-type assignment of that type, in the config's tree |
 | Unbundled — alias | `ALS\|{paymentType}\|{aliasId}` | that alias, likewise |
-| Bundled — payment type | `PT\|{paymentType}` | any payment-type assignment of that type under the config; `FOUND` returns *all* its current accounts/aliases (the bundle is rebuilt in full — `solution_v08.md` BR6) |
+| Bundled — whole config | `BND` | the config row itself still active; `FOUND` returns the *entire* current tree — every payment type, every account/alias under it, merged across scopes (the whole bundle is rebuilt in full — confirmed against the legacy `bikili` assembler, `ReportMessageAssembler`/`PaymentTypeGrouper`: a bundled config is exactly one `ReportMessage`, never one per payment type) |
 | Config-only (zero scope) | `CFG` | the config row itself still active |
 
 Deterministic, human-readable, fits well under 200 chars. **This grammar needs a joint
 sign-off with the pipeline side** (it also feeds `UQ_WorkItem_Identity` and the `Outbox`
 `scope_key` column).
+
+**`BND` and `CFG` share a marker shape (no parameters) and the same presence check** — is the
+config still active — but stay distinct, because they're different report shapes: `BND` always
+carries a resolved scope tree, `CFG` never does. There is only ever **one** `BND` `WorkItem` per
+bundled config, matching the one-message-per-config unit of work — not one per payment type, as
+an earlier draft of this grammar assumed.
 
 ---
 
@@ -376,7 +382,7 @@ repositories.
 
 ## 11. Why not the alternatives
 
-The chosen design is **Option A** from `solution_v01.md`. The other two aren't wrong — they'd
+The chosen design is **Option A** from `archive/solution_v01.md`. The other two aren't wrong — they'd
 work — but each trades something this layer specifically needs for something it doesn't.
 
 ### Resolving per config (the anti-pattern)

@@ -9,13 +9,13 @@ purpose to stay readable. Nothing here should ever contradict `solution.md` — 
 
 Scheduling decides *when* each report runs and *what reporting window* a firing represents,
 then hands off to the message-production pipeline
-(`../message-pipeline/how-it-works.md` / `../message-pipeline/solution_v08.md`). Scheduling owns nothing after a `Run` is
+(`../message-pipeline/solution.md` / `../message-pipeline/solution_v08.md`). Scheduling owns nothing after a `Run` is
 created.
 
 **In scope:** cadences, the reporting-window rules, wiring to Quartz, the deploy-time config
 shape, and the admin endpoints (manual run, backfill, pause/resume, status).
-**Out of scope:** producing the report messages and resolving each config's account/scope data
-(the pipeline and the data-retrieval layer — `../data-retrieval/goal.md`); a
+**Out of scope:** producing the report messages and resolving each config's payment-type data
+(accounts or aliases) — the pipeline and the data-retrieval layer (`../data-retrieval/goal.md`); a
 schedule-management UI or runtime editing of the *timetables themselves* (that stays
 deploy-time config); holiday calendars.
 
@@ -41,9 +41,19 @@ Per firing, the job:
 The pipeline creates the `Run` — guarded by `UQ_Run_ScheduledSlot`, a filtered unique index on
 `(report_type, frequency, scheduled_time)` over `SCHEDULED` rows (`../message-pipeline/solution_v08.md`) — and
 pages `ReportConfig WHERE report_type = ? AND frequency = ? AND is_active = 1`, per
-`../message-pipeline/how-it-works.md` §4. `frequency` and the window are persisted on the `Run` row: one report
+`../message-pipeline/solution.md` §4. `frequency` and the window are persisted on the `Run` row: one report
 type can have several frequencies (CAMT054C has three), and recovery's "keep paging" step
 needs both to know which config set to page and what window to stamp.
+
+**Feature-flag gate, immediately after `Run` creation, before any paging.** The job checks a
+feature flag for that report type. Off → the `Run` is marked `SKIPPED_FLAG_OFF` right there
+(`../message-pipeline/solution_v08.md`) and nothing further happens — no `ReportConfig` paging,
+no `WorkItem`s. On → the five facts above are handed to the pipeline as normal. This is
+terminal, same as the relay's own flag check further downstream
+(`../message-pipeline/solution.md` §8, `solution_v08.md`'s "Feature flags") — neither is
+retried. A `SKIPPED_FLAG_OFF` Run still occupies its `UQ_Run_ScheduledSlot` slot; since no
+`WorkItem`s exist for it, a later backfill of that slot (§8, §14) starts clean if the flag is
+back on and that window's report is explicitly re-requested.
 
 A `Run` is single-report-type. A firing therefore always maps to **one `Run` for one report
 type**, never several — where a config entry groups report types (§6), the loader has already
@@ -154,8 +164,8 @@ the calendar day it would have on time.
 ### Daylight saving
 
 The business timezone observes DST: clocks jump **forward** one hour in spring (local time
-skips 02:00 → 03:00) and **back** one hour in autumn (local time repeats 01:00 → 02:00). Three
-consequences for boundary scheduling, with the chosen rules:
+skips 02:00 → 03:00) and **back** one hour in autumn (local time repeats 01:00 → 02:00). Four
+consequences, with the chosen rules:
 
 - **A boundary in the spring-forward gap** (e.g. a future boundary at 02:00 or 02:30, which
   simply doesn't occur on that day) → **shift it forward to the first instant that does
@@ -171,10 +181,19 @@ consequences for boundary scheduling, with the chosen rules:
   day and ~4 on fall-back day; `END_OF_DAY` spans **23 h or 25 h**. This is intended. The
   message contract should note a window's elapsed length can differ by an hour on the two
   transition days so Executor isn't surprised.
+- **A Rolling fire time in the gap or overlap** — `EVERY_1_HOUR` at 02:00, `EVERY_30_MIN` at
+  02:00 and 02:30 — is resolved by the same two rules above (shift forward / earlier
+  occurrence, fire once), since Rolling has no boundary list to fall back on. The practical
+  effect differs from Boundary: a Rolling window is `fire − interval`, so the fire adjacent to
+  the transition ends up with a window whose start resolves to the same instant as its end —
+  an effectively empty report, not a wrong one. The hour of real activity around the
+  transition isn't captured by any window that day; recoverable only by an explicit backfill,
+  same as any other skipped fire.
 
-**Current boundary set is safe** — no boundary falls in `02:00–03:00`, so none of the above
-triggers today. But boundary lists are editable config (§2), so the rules must be in the
-window function before anyone adds an early-hours boundary.
+**Only the Boundary shape is unaffected today** — no Boundary checkpoint falls in
+`02:00–03:00`, so the gap/overlap rules don't trigger for it yet (boundary lists are editable
+config, §2, so the rules must stay in the window function regardless of that). Rolling **is**
+affected today, on every DST transition, per the bullet above.
 
 Implementation: Java's `ZonedDateTime.of(date, localTime, zone)` already resolves
 gap → shift-forward and overlap → earlier-offset, which matches the rules above — but pin it
@@ -574,3 +593,8 @@ still in config; startup reconciliation (§5) removes it only if it's been dropp
   killed pod: if the `Run` row was never created, the recovered firing creates it and processes
   normally; if it already existed, the recovered firing hits `UQ_Run_ScheduledSlot` and exits
   cleanly — no duplicate `Run`, no double-published message either way.
+- **Business sign-off on the Rolling-shape DST behavior** (§4): on both transition days, one
+  `EVERY_1_HOUR`/`EVERY_30_MIN` report comes out empty and one hour of real activity around the
+  jump goes unreported, recoverable only by an explicit backfill. Confirm that's acceptable, or
+  decide a wider/adjacent window should absorb that hour instead — this is newly worked out, not
+  something the earlier DST sign-off covered.
