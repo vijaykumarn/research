@@ -75,7 +75,7 @@
                 <mxCell id="d1" value="Run already exists for&#10;(report_type, frequency, scheduled_time) ?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="310" y="342" width="320" height="96" as="geometry" />
                 </mxCell>
-                <mxCell id="t1" value="UQ_Run_ScheduledSlot violation:&#10;log, exit job cleanly&#10;(no JobExecutionException)&#10;existing Run = COMPLETED / IN_PROGRESS / ABANDONED" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
+                <mxCell id="t1" value="UQ_Run_ScheduledSlot violation:&#10;log, exit job cleanly&#10;(no JobExecutionException)&#10;existing Run = COMPLETED / IN_PROGRESS / ABANDONED / SKIPPED_FLAG_OFF" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
                     <mxGeometry x="690" y="340" width="250" height="100" as="geometry" />
                 </mxCell>
                 <mxCell id="s4" value="Page ReportConfig WHERE report_type=? AND frequency=? AND is_active=1&#10;-&gt; hand each page to the pipeline" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
@@ -84,7 +84,7 @@
                 <mxCell id="s5" value="Pipeline produces the messages&#10;see pipeline-flow.drawio" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="320" y="680" width="300" height="44" as="geometry" />
                 </mxCell>
-                <mxCell id="m1" value="Cluster was down&#10;across a firing?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
+                <mxCell id="m1" value="Firing missed?&#10;(cluster down, or schedule deliberately paused)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
                     <mxGeometry x="40" y="104" width="210" height="80" as="geometry" />
                 </mxCell>
                 <mxCell id="m2" value="Misfire = DO_NOTHING&#10;that slot is skipped entirely&#10;no automatic catch-up, ever" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontColor=#333333;fontSize=11;align=left;" parent="1" vertex="1">
@@ -188,7 +188,7 @@
                 <mxCell id="capc" value="window = the WHOLE previous calendar day ;  23 h or 25 h on a DST transition day (intended)" style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="190" y="434" width="540" height="30" as="geometry" />
                 </mxCell>
-                <mxCell id="wnote" value="All times Europe/Stockholm. Business day Mon-Fri (Tue-Sat for END_OF_DAY). 21:00 -&gt; 24:00 is never reported by any frequency." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
+                <mxCell id="wnote" value="All times Europe/Stockholm. Business day Mon-Fri (Tue-Sat for END_OF_DAY). 21:00 -&gt; 24:00 is never reported same-day by rolling or boundary frequencies - only the calendar-day shape covers it, one day later." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="30" y="510" width="740" height="40" as="geometry" />
                 </mxCell>
             </root>

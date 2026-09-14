@@ -51,9 +51,15 @@ feature flag for that report type. Off → the `Run` is marked `SKIPPED_FLAG_OFF
 no `WorkItem`s. On → the five facts above are handed to the pipeline as normal. This is
 terminal, same as the relay's own flag check further downstream
 (`../message-pipeline/solution.md` §8, `solution_v08.md`'s "Feature flags") — neither is
-retried. A `SKIPPED_FLAG_OFF` Run still occupies its `UQ_Run_ScheduledSlot` slot; since no
-`WorkItem`s exist for it, a later backfill of that slot (§8, §14) starts clean if the flag is
-back on and that window's report is explicitly re-requested.
+retried. A `SKIPPED_FLAG_OFF` Run still occupies its `UQ_Run_ScheduledSlot` slot, and that's
+final — no retries, by design, matching how `Outbox`'s own `SKIPPED_FLAG_OFF` is also
+non-retryable. A same-slot backfill does not change this: backfill targets the identical
+`(report_type, frequency, scheduled_time)` tuple via `scheduledTimeOverride`, so its
+`Run`-creation attempt hits the same `UQ_Run_ScheduledSlot` violation as any other duplicate
+firing (§7) and exits as a no-op — same "already exists" path, regardless of *why* the
+existing `Run` is terminal. If that window's report is still wanted despite the original
+flag-off decision, that's not a retry of this slot at all — it's an on-demand request, which
+isn't subject to `UQ_Run_ScheduledSlot` in the first place.
 
 A `Run` is single-report-type. A firing therefore always maps to **one `Run` for one report
 type**, never several — where a config entry groups report types (§6), the loader has already
@@ -338,10 +344,11 @@ The pipeline handles this correctly with no locking:
 finds a `Run` already exists for its `(report_type, frequency, scheduled_time)`, the job
 catches the `UQ_Run_ScheduledSlot` violation, logs it, and **exits cleanly** — it does not
 throw to Quartz (a `JobExecutionException` would be recorded as a failed execution and could
-escalate to misfire/alert handling). The existing `Run` is either `COMPLETED` (idempotent
-no-op), `IN_PROGRESS` (the recovery sweeper owns it), or `ABANDONED` (the give-up alert
-already fired — re-running that slot is a manual action, §8). Same posture as
-`../message-pipeline/solution_v08.md`'s `Outbox` "already exists" success path.
+escalate to misfire/alert handling). The existing `Run` is `COMPLETED` (idempotent no-op),
+`IN_PROGRESS` (the recovery sweeper owns it), `ABANDONED` (the give-up alert already fired —
+re-running that slot is a manual action, §8), or `SKIPPED_FLAG_OFF` (§1) — final, by design,
+same posture as `ABANDONED`: re-triggering the slot is a no-op, not a retry mechanism. Same
+posture as `../message-pipeline/solution_v08.md`'s `Outbox` "already exists" success path.
 
 **No `@DisallowConcurrentExecution` on `ReportSchedulingJob`.** The double DB read load from
 two overlapping runs paging the same configs is accepted — the goal is a service that

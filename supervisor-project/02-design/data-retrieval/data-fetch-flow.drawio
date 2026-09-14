@@ -1,6 +1,6 @@
 <mxfile host="65bd71144e">
     <diagram id="staged-reads" name="1 - Six staged reads">
-        <mxGraphModel dx="897" dy="682" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="960" math="0" shadow="0">
+        <mxGraphModel dx="989" dy="772" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="850" pageHeight="960" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -73,7 +73,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="dependency" name="2 - What each read keys off">
-        <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="760" math="0" shadow="0">
+        <mxGraphModel dx="989" dy="772" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="760" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
@@ -96,7 +96,7 @@
                     <mxGeometry x="290" y="460" width="180" height="50" as="geometry"/>
                 </mxCell>
                 <mxCell id="dasm" value="Pure assembler&#xa;to  List&lt;ResolvedConfig&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e0e0e0;strokeColor=#666666;fontColor=#333333;fontSize=11;" parent="1" vertex="1">
-                    <mxGeometry x="310" y="620" width="260" height="60" as="geometry"/>
+                    <mxGeometry x="250" y="630" width="260" height="60" as="geometry"/>
                 </mxCell>
                 <mxCell id="de1" value="config ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d1" target="d2" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
@@ -113,7 +113,7 @@
                 <mxCell id="de5" value="assignment ids" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#666666;endArrow=block;fontColor=#333333;fontSize=10;" parent="1" source="d3" target="d5" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="df1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d1" target="dasm" edge="1">
+                <mxCell id="df1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=default;dashed=1;endArrow=block;" parent="1" source="d1" target="dasm" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
                 <mxCell id="df2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d2" target="dasm" edge="1">
@@ -128,8 +128,13 @@
                 <mxCell id="df5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d5" target="dasm" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="df6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#999999;dashed=1;endArrow=block;" parent="1" source="d6" target="dasm" edge="1">
-                    <mxGeometry relative="1" as="geometry"/>
+                <mxCell id="df6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=default;dashed=1;endArrow=block;curved=0;" parent="1" source="d6" target="dasm" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="590" y="590"/>
+                            <mxPoint x="380" y="590"/>
+                        </Array>
+                    </mxGeometry>
                 </mxCell>
                 <mxCell id="dnote" value="Solid = id set passed to the next read.&#xa;Dashed = flat result set fed to the assembler." style="text;html=1;align=left;verticalAlign=top;fontColor=#888888;fontSize=10;" parent="1" vertex="1">
                     <mxGeometry x="590" y="400" width="220" height="50" as="geometry"/>
@@ -138,7 +143,7 @@
         </mxGraphModel>
     </diagram>
     <diagram id="recovery" name="3 - Recovery reResolve tri-state">
-        <mxGraphModel dx="1076" dy="818" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="880" math="0" shadow="0">
+        <mxGraphModel dx="989" dy="772" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="900" pageHeight="880" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
