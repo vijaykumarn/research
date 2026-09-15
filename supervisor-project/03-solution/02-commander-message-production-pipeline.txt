@@ -1,18 +1,19 @@
 1. Overview
 
 This solution document describes how Commander builds and delivers report messages — reliably,
-even when the pods doing the work die mid-task, with no warning and no graceful shutdown. It
+even when the pods doing the work die mid-task with no warning and no graceful shutdown. It
 does not cover when a report is due or what time window it covers (see
-01-commander-solution.txt, the scheduling solution), or how a configuration's accounts and
-aliases are actually resolved (see 03-commander-data-retrieval.txt).
+01-commander-solution.txt, the scheduling solution), or how a configuration's agreement scope —
+the payment types, accounts, and aliases beneath it — is actually resolved (see
+03-commander-data-retrieval.txt).
 
 1.1 Conceptual Overview
 
 Commander's job is only this: decide which reports are due, for whom, for what time window,
-gather the payment-type data (accounts or aliases) those reports need, build a message, and put
-it on the right queue. Another application, Executor, picks those messages up and produces the
-actual reports. Commander never renders anything itself — its responsibility ends the moment
-its message is on the queue.
+gather the payment-type data those reports need — the accounts and aliases beneath each
+configuration's agreement scope — build a message, and put it on the right queue. Another
+application, Executor, picks those messages up and produces the actual reports. Commander never
+renders anything itself — its responsibility ends the moment its message is on the queue.
 
 Commander runs as many identical pods at once, sharing one database and one message queue, and
 any one of those pods can be killed at any moment, mid-task, with no warning. The design exists
@@ -52,10 +53,10 @@ Out of scope:
   - Deciding when a report is due and what time window it covers — that is scheduling
     (01-commander-solution.txt). This document takes the five facts scheduling hands off (1.6)
     as a given.
-  - Resolving a configuration's actual accounts and aliases from its agreement scope — that is
-    the Data Retrieval layer (03-commander-data-retrieval.txt). This document treats that data
-    as something it requests and gets back.
-  - Producing the actual report document a customer receives — that is Executor, a separate
+  - Resolving a configuration's agreement scope — the payment types, accounts, and aliases
+    beneath it — that is the Data Retrieval layer (03-commander-data-retrieval.txt). This
+    document treats that data as something it requests and gets back.
+  - Producing the actual CAMT report that a customer receives — that is Executor, a separate
     downstream application. Commander's output is only the instruction Executor acts on.
 
 Acceptance criteria — to be verified once this is implemented, under a real clustered
