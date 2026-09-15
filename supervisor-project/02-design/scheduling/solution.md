@@ -242,12 +242,12 @@ One authenticated, admin-only surface, all keyed on `(report type, frequency)`:
   any further work. Nothing is built or published twice, and it isn't treated as a failure.
 - **A crashed pod's work is always recovered — which mechanism handles it just depends on
   timing.**
-  - **Pod dies in the instant before it could even create that record:** the scheduler's own
-    clustering re-fires that one firing on a live pod, and it starts fresh — since, as far as
-    anything can tell, that firing never actually began.
-  - **Pod dies after the tracking record was created, but before the run finished:** the
-    pipeline's own recovery mechanism notices (it watches for runs that have gone quiet) and
-    resumes from where the pod stopped.
+    - **Pod dies in the instant before it could even create that record:** the scheduler's own
+      clustering re-fires that one firing on a live pod, and it starts fresh — since, as far as
+      anything can tell, that firing never actually began.
+    - **Pod dies after the tracking record was created, but before the run finished:** the
+      pipeline's own recovery mechanism notices (it watches for runs that have gone quiet) and
+      resumes from where the pod stopped.
 
   These two never clash, because the re-fired attempt always does the same first check: try to
   create the tracking record. If it doesn't exist yet, create it and carry on normally. If it
