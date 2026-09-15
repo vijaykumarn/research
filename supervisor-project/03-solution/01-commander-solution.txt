@@ -19,25 +19,26 @@ respectively (see 02-commander-message-production-pipeline.txt and
 
 Every firing resolves to a small, fixed set of facts — report type, frequency, the moment it
 was scheduled for (the scheduled fire time), and the reporting window's start and end — handed
-to the Message Production Pipeline as one package. The window itself is always computed under
-one of three shapes: Rolling (a fixed look-back ending at the fire time), Boundary (the stretch
-since the previous checkpoint today, anchored to midnight), or Calendar-day (the whole previous
-calendar day, delivered the next morning). Both of these are introduced only briefly here,
-because the rest of this document refers to them by name; the full detail for both lives in 1.6
-(Logical View - Architecture Scope).
+to the Message Production Pipeline as one package. The reporting window itself is always computed
+using one of three shapes: Rolling (a fixed look-back ending at the fire time), Boundary
+(the stretch since the previous checkpoint today, anchored to midnight), or Calendar-day (the
+whole previous calendar day, delivered the next morning). Both of these are introduced only
+briefly here, because the rest of this document refers to them by name; the full detail for
+both lives in 1.6 (Logical View - Architecture Scope).
 
 1.2 Scope and Acceptance Criteria
 
 In scope:
 
-  - Cadences for every report type (Rolling, Boundary, and Calendar-day frequencies).
+  - How often (the cadence) each report type runs (Rolling, Boundary, and Calendar-day frequencies).
   - The reporting-window computation rules for each cadence, including daylight-saving
     behaviour.
-  - Wiring to the clustered job scheduler (Quartz).
-  - The declarative format used to describe a schedule in deploy-time configuration —
-    report types, frequency, days, and either an interval or an explicit boundary-time list
-    (see 1.4, decision 6) — from which the application generates the actual cron trigger(s).
-  - The admin control surface: Run now, Backfill, Pause, Resume, and Status.
+  - Connecting to Quartz, the clustered job scheduler this application uses to wake up on a
+    timetable.
+  - The declarative format used to describe a schedule in the application's own configuration — report
+    types, frequency, days, and either an interval or an explicit list of boundary times (see
+    1.4, decision 6) — from which the application builds the actual cron trigger(s).
+  - The admin actions available: Run now, Backfill, Pause, Resume, and Status.
 
 Out of scope:
 
@@ -120,13 +121,12 @@ Recovery and failure handling:
   6. Cron expressions are generated from declarative configuration, never hand-authored. An
      operator describes a schedule in plain terms — report types, frequency, days, and either
      an interval or an explicit list of boundary times — and the application derives the
-     underlying timer expression from that. This matters because the same boundary list also
-     drives the window calculation; if the timer were hand-written separately, the two could
-     silently drift apart.
+     underlying "cron" timing expression from that. This matters because the same boundary
+     list also drives the window calculation; if the timing rule were hand-written separately, the two could silently drift apart from each other.
 
   7. Scheduling's responsibility ends at the handoff. A firing creates a tracking record as
      its first durable action, checks a feature flag for that report type, and then hands off
-     exactly five facts to the pipeline. It does not build reports, does not resolve a
+     exactly five facts to the pipeline. It does not build reports, does not look up a
      configuration's metadata or its agreement scope, and does not track whether the
      handed-off work eventually succeeds.
 
@@ -135,7 +135,7 @@ Recovery and failure handling:
      run and publish at the same time — a slow run must never hold back the next window's
      report. There is no mutual-exclusion lock preventing this.
 
-  9. One uniform admin control surface, keyed on (report type, frequency). Run now, Backfill,
+  9. One uniform set of admin actions, addressed by (report type, frequency). Run now, Backfill,
      Pause, Resume, and Status all address a schedule the same way regardless of its window
      shape, so operators have one consistent mental model for controlling any schedule.
 
@@ -145,12 +145,12 @@ Recovery and failure handling:
     converted to absolute time only for the outgoing message.
   - The business day is Monday to Friday. There is no holiday calendar — a weekday holiday
     still runs its scheduled firings and produces a (possibly near-empty) report.
-  - The deployment runs as multiple pods in a clustered environment (per
-    application-summary.md, on OpenShift). Scheduling's choice of a clustered, job-store-backed
-    scheduler to guarantee exactly one pod picks up each firing (decision 1 in 1.4) depends on
+  - The deployment runs as multiple pods in a clustered environment. Scheduling's choice of a clustered, job-store-backed
+   scheduler to guarantee exactly one pod picks up each firing (decision 1 in 1.4) depends on
     that being true.
-  - A feature-flag mechanism exists and is addressable per report type, so scheduling can gate
-    a firing before handing work to the pipeline.
+  - A feature-flag mechanism (a simple on/off switch per report type) exists and is
+    addressable per report type, so scheduling can gate a firing before handing work to the
+    pipeline.
 
 1.6 Logical View - Architecture Scope
 
@@ -158,9 +158,9 @@ Scheduling is made up of the following logical components:
 
   - Trigger loader / generator — reads the deploy-time schedule configuration, expands any
     entry that lists several report types into one independent schedule per report type,
-    generates the underlying timer expression(s) from each schedule's declarative interval or
-    boundary-list specification, and builds and registers the resulting job and trigger
-    definitions with the clustered scheduler at startup.
+    generates the underlying cron timing expression(s) from each schedule's interval or
+    boundary-list specification, and builds and registers the resulting job and trigger definitions
+    with the clustered scheduler at startup.
 
   - Startup reconciliation — also at startup, before the scheduler begins running, removes any
     triggers left over from a prior configuration so that nothing fires against a stale
@@ -173,7 +173,7 @@ Scheduling is made up of the following logical components:
     This is the component that carries out the sequence in 1.7: resolving the window, creating
     the tracking record, checking the feature flag, and handing off to the pipeline.
 
-  - Window function — a pure calculation that resolves a scheduled fire time to a
+  - Window function — a straightforward pure calculation that resolves a scheduled fire time to a
     (window start, window end) pair. Every report frequency falls into one of three window
     shapes — this is the whole mental model for how a reporting window is computed:
 
@@ -199,8 +199,8 @@ Scheduling is made up of the following logical components:
     handles any given firing, with job recovery enabled so a pod that dies before completing a
     firing's first durable step does not silently lose that firing.
 
-  - Admin control surface — an authenticated, admin-only surface for Run now, Backfill,
-    Pause, Resume, and Status, keyed on (report type, frequency).
+  - Admin control surface — an authenticated, admin-only set of actions for Run now, Backfill,
+    Pause, Resume, and Status, addressed by (report type, frequency).
 
 Handoff boundary: Scheduling hands off exactly five facts to the Message Production Pipeline
 (02-commander-message-production-pipeline.txt), as one package:
@@ -266,8 +266,8 @@ B. When a firing is missed
   Recovering a missed slot is always a deliberate action, available for any missed slot,
   sub-daily or end-of-day alike. An operator (or a small admin endpoint) fires the schedule
   again, passing the missed slot's time, and it produces exactly the window that firing would
-  have produced on time. This is idempotent — re-issuing a backfill for a slot that already
-  ran is a harmless no-op.
+  have produced on time. This is idempotent (safe to repeat) — re-issuing a backfill for a slot that
+  already ran simply does nothing the second time.
 
   This is also the intended shape of a deliberate pause: pause the schedule to ride out the
   issue, fix it, resume for firings going forward, then — once it is agreed which slots

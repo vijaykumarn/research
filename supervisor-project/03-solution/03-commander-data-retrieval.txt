@@ -6,5 +6,6 @@
 1.4 Architectural Decisions
 1.5 Assumptions and Pre-Requisites
 1.6 Logical View - Architecture Scope
+1.7 Workflow / Process Flow
 
 2. Implementation Reference
