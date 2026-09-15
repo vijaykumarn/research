@@ -12,8 +12,8 @@ type runs how often, and the reporting-window rules) is a separate concern — s
 Commander produces **report messages** and drops them on IBM MQ queues. Another app,
 **Executor**, picks them up and makes the real reports. Commander's job is only:
 
-> decide which reports are due, for whom, for what time window → gather the account data →
-> build a JSON message → put it on the right queue.
+> decide which reports are due, for whom, for what time window → gather the payment-type data
+> (accounts or aliases) → build a JSON message → put it on the right queue.
 
 It runs as **many identical copies (pods)** at once, sharing one database and one MQ. Any pod
 can be killed at any moment — mid-work, no warning. The whole design exists to make that
@@ -137,7 +137,7 @@ A single config can turn into one message or many:
 
 | Config | Produces |
 |---|---|
-| **Bundled** | One message per payment type, covering all that payment type's accounts |
+| **Bundled** | One message for the whole config — every payment type it has, merged across every scope |
 | **Unbundled** | One message per account / alias |
 | **No scope attached** | One "just the config" message |
 
@@ -182,8 +182,7 @@ Every WorkItem finishes in exactly one of these states:
 
 | State | Meaning |
 |---|---|
-| **PUBLISHED** | Its message is in the Outbox. Done. |
-| **SKIPPED_FLAG_OFF** | A feature flag said "don't produce this one." Logged, done, not an error. |
+| **BUILT** | Its message is in the Outbox. Done — this means *produced*, not *delivered*; a feature-flag check downstream, at the relay, can still leave it unsent. |
 | **FAILED_POISON** | Tried several times, keeps failing (usually bad data). Terminal, **raises an alert** for a person. The rest of the run carries on. |
 | **OBSOLETE** | During recovery, the account / scope this item was for turned out to have been genuinely removed. Logged, done, **not** an alert. |
 

@@ -382,3 +382,43 @@ scheduled/on-demand/PHT; the tri-state resolve result recovery needs). Split int
   violation *rate* signals a staged-read bug not bad data. Also softened the
   `OPTION (RECOMPILE)` claim: it fixes row count, not value-distribution stats — fine for the
   straight-join shapes here, revisit if a future TVP query adds a second selective predicate.
+
+- **`data-retrieval/solution.md` created** — single consolidated doc, same register as
+  `scheduling/solution.md` / `message-pipeline/solution.md`; `goal.md`, `solution_v01.md`,
+  `solution_v02.md` left as-is (same first pass as the other two tracks).
+
+- **Bundling correction — a wrong assumption traced back to the legacy `bikili` source, fixed
+  everywhere it appeared.** Every design doc so far (this one included, until now) assumed a
+  *bundled* config produces **one message per payment type**. Investigating
+  `bikili`'s `ReportMessageAssembler` / `PaymentTypeGrouper`
+  (`domain/assembly/`) shows the opposite: `createMessages()` returns exactly **one**
+  `ReportMessage` when `bundled == true` — `PaymentTypeGrouper.groupBundled()` merges every
+  payment-type assignment *across every scope* into that single message's `paymentTypes` list
+  (one allocation per distinct payment type, not one message per type). The domain javadocs
+  confirm it explicitly: *"Bundled: One allocation per distinct payment type, merged across
+  scopes"* (one message). Unbundled is unaffected — genuinely one message per account/alias.
+
+  Fixed: `message-pipeline/solution_v08.md` (Foundation "Unit of work" line),
+  `message-pipeline/solution.md` §3 and §5, `message-pipeline/how-it-works.md`'s bundling
+  table, `message-pipeline/pipeline-flow.drawio` (end-to-end page's WorkItem-creation note),
+  `data-retrieval/goal.md` §1, `data-retrieval/solution.md` §6, and
+  `data-retrieval/solution_v02.md` §3 — the `scope_key` grammar's bundled entry changed from
+  `PT|{paymentType}` (one per payment type) to `BND` (one per config, no parameter; found
+  returns the whole rebuilt tree). Left deliberately untouched: `message-pipeline/goal.md` and
+  the archived `solution_v01.md`–`v07.md` / `data-retrieval/solution_v01.md` — historical
+  snapshots, not live docs.
+
+- **`02-design/` reorganized — superseded docs moved into per-track `archive/` folders**,
+  `git mv`'d so history is preserved as renames. `data-retrieval/archive/`: `solution_v01.md`
+  (the external agent's superseded 3-option draft). `message-pipeline/archive/`:
+  `solution_v01.md`–`solution_v07.md` (the round-by-round draft history), `how-it-works.md`
+  (now redundant with `solution.md`, same call already made for `scheduling/`'s equivalent),
+  `goal.md` and `redesign-brief.md` (the original pre-design briefs, not referenced by path
+  from any live doc — `data-retrieval/goal.md` is the exception and stays live, since
+  `solution.md`/`solution_v02.md` still actively cite it). `scheduling/` needed no changes,
+  already cleaned up earlier this session. Surviving cross-references to the moved files
+  updated: two `../message-pipeline/how-it-works.md` citations in
+  `scheduling/implementation-reference.md` repointed to `../message-pipeline/solution.md` (the
+  live successor, more useful than pointing at a frozen archive copy); two `solution_v01.md`
+  citations in `data-retrieval/solution_v02.md` repointed to `archive/solution_v01.md` (no live
+  successor exists for that one — it's a historical citation on its own merits).

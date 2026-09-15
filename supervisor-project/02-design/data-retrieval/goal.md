@@ -24,9 +24,9 @@ For each `ReportConfig` in the input set, a fully-resolved structure containing:
 - **The recipient** the message is addressed to.
 
 The message-assembly step (in the pipeline) takes this and produces one or more messages per
-config according to the bundling rule (bundled → one per payment type; unbundled → one per
-account/alias; no scope → one "config-only" message). Assembly is **out of scope here** — this
-layer stops at "resolved structure per config".
+config according to the bundling rule (bundled → one message for the whole config, covering
+every payment type; unbundled → one per account/alias; no scope → one "config-only" message).
+Assembly is **out of scope here** — this layer stops at "resolved structure per config".
 
 ---
 
