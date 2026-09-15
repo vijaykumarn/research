@@ -1,0 +1,40 @@
+{
+  "version": "3.0.0",
+  "darkMode": false,
+  "gridEnabling": false,
+  "currentViewName": null,
+  "defaultView": {
+    "detailLevel": "All",
+    "relationshipMode": "All",
+    "tablePositions": [
+      {
+        "name": "Run",
+        "schemaName": "public",
+        "x": -343.4095477386935,
+        "y": 344.7286432160804
+      },
+      {
+        "name": "WorkItem",
+        "schemaName": "public",
+        "x": 91.66615824483745,
+        "y": 312.8819095477387
+      },
+      {
+        "name": "Outbox",
+        "schemaName": "public",
+        "x": 536.3840543660685,
+        "y": 274.41708542713565
+      },
+      {
+        "name": "ProcessedInboundMessage",
+        "schemaName": "public",
+        "x": 117.73115577889439,
+        "y": 786.5125628140703
+      }
+    ],
+    "tableGroupCollapseStates": [],
+    "stickyNoteLayouts": [],
+    "referencePaths": []
+  },
+  "views": {}
+}
