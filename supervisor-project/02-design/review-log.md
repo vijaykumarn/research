@@ -284,6 +284,20 @@ owner's request.
   `EIGHT_TIMES_PER_DAY` fire times / window rule (00:00→03:00, 03:00→06:00, … as designed) — no
   change to either. Only a build-time Quartz test remains (`solution_v01.md` §16).
 
+  **`requestRecovery` flipped from `false` to `true` (reader feedback on `solution.md` §8:
+  "are you confident there will be no crash between a pod picking up a firing and creating its
+  `Run` row? shouldn't we use `requestRecovery(true)`?").** The original `false` choice assumed
+  Quartz's own trigger-level recovery would *race* the pipeline's heartbeat sweeper. On
+  inspection that assumption doesn't hold: the scheduling job's own logic never attempts to
+  resume in-progress work — it only ever creates a `Run` or, if one already exists, exits via
+  the same `UQ_Run_ScheduledSlot` no-op used for any duplicate firing. So a Quartz-recovered
+  re-fire and the sweeper cover **disjoint** failure windows (before vs. after `Run` creation)
+  rather than competing, and `requestRecovery(false)` was leaving a real gap: a pod dying in
+  the moment between picking up a firing and committing its `Run` row was silently lost —
+  neither the misfire policy (nothing became due) nor the sweeper (no `Run` row to find) could
+  see it. Flipped to `true`; `solution_v01.md` §5/§9/§10, `solution.md` §4/§8, and
+  `how-it-works.md` §7 updated; a matching Quartz test added to `solution_v01.md` §16.
+
   **Misfire policy generalised to cover a deliberate pause, not just a crash** (reader
   feedback on `how-it-works.md` §8: does an operator pausing a trigger for a production issue
   also cause missed firings?). Answer: yes, and it was already handled by the same
@@ -293,6 +307,21 @@ owner's request.
   "cluster was down", and §8/how-it-works.md's missed-firing section documents the intended
   operator workflow: pause → fix → resume → **explicit** backfill of whichever slots the
   business agrees need recovering. No design change — a documentation gap, now closed.
+
+  **`scheduling/how-it-works.md` retired.** Once `scheduling/solution.md` existed as a single
+  self-contained doc covering the same ground in the same accessible register,
+  `how-it-works.md` was redundant — removed. `solution_v01.md` remains, as the one place that
+  still carries implementation detail `solution.md` deliberately leaves out (the full
+  generated-cron table, startup validation rules, the properties/edge-case appendix). No other
+  doc pointed at `how-it-works.md` by path; the mentions above are historical.
+
+  **`scheduling/solution_v01.md` renamed to `scheduling/implementation-reference.md`** (reader
+  feedback: the original goal was one document, and keeping a same-generation `solution_v01.md`
+  alongside `solution.md` read as an unfinished merge rather than a deliberate split). Content
+  unchanged; only the framing and filename changed — it's now explicitly positioned as
+  `solution.md`'s implementation-detail companion, not a parallel design doc, with a pointer
+  each way between the two files. The four cross-references from `message-pipeline/solution_v08.md`
+  and `message-pipeline/how-it-works.md` were repointed to `../scheduling/solution.md`.
 
 > The `faq.md` Q2 race (scheduled + on-demand on the same `(config, window)`) and the
 > `ScopeClaim` TTL are **no longer open items** — v08 removed the claim; that case is now just
@@ -353,3 +382,43 @@ scheduled/on-demand/PHT; the tri-state resolve result recovery needs). Split int
   violation *rate* signals a staged-read bug not bad data. Also softened the
   `OPTION (RECOMPILE)` claim: it fixes row count, not value-distribution stats — fine for the
   straight-join shapes here, revisit if a future TVP query adds a second selective predicate.
+
+- **`data-retrieval/solution.md` created** — single consolidated doc, same register as
+  `scheduling/solution.md` / `message-pipeline/solution.md`; `goal.md`, `solution_v01.md`,
+  `solution_v02.md` left as-is (same first pass as the other two tracks).
+
+- **Bundling correction — a wrong assumption traced back to the legacy `bikili` source, fixed
+  everywhere it appeared.** Every design doc so far (this one included, until now) assumed a
+  *bundled* config produces **one message per payment type**. Investigating
+  `bikili`'s `ReportMessageAssembler` / `PaymentTypeGrouper`
+  (`domain/assembly/`) shows the opposite: `createMessages()` returns exactly **one**
+  `ReportMessage` when `bundled == true` — `PaymentTypeGrouper.groupBundled()` merges every
+  payment-type assignment *across every scope* into that single message's `paymentTypes` list
+  (one allocation per distinct payment type, not one message per type). The domain javadocs
+  confirm it explicitly: *"Bundled: One allocation per distinct payment type, merged across
+  scopes"* (one message). Unbundled is unaffected — genuinely one message per account/alias.
+
+  Fixed: `message-pipeline/solution_v08.md` (Foundation "Unit of work" line),
+  `message-pipeline/solution.md` §3 and §5, `message-pipeline/how-it-works.md`'s bundling
+  table, `message-pipeline/pipeline-flow.drawio` (end-to-end page's WorkItem-creation note),
+  `data-retrieval/goal.md` §1, `data-retrieval/solution.md` §6, and
+  `data-retrieval/solution_v02.md` §3 — the `scope_key` grammar's bundled entry changed from
+  `PT|{paymentType}` (one per payment type) to `BND` (one per config, no parameter; found
+  returns the whole rebuilt tree). Left deliberately untouched: `message-pipeline/goal.md` and
+  the archived `solution_v01.md`–`v07.md` / `data-retrieval/solution_v01.md` — historical
+  snapshots, not live docs.
+
+- **`02-design/` reorganized — superseded docs moved into per-track `archive/` folders**,
+  `git mv`'d so history is preserved as renames. `data-retrieval/archive/`: `solution_v01.md`
+  (the external agent's superseded 3-option draft). `message-pipeline/archive/`:
+  `solution_v01.md`–`solution_v07.md` (the round-by-round draft history), `how-it-works.md`
+  (now redundant with `solution.md`, same call already made for `scheduling/`'s equivalent),
+  `goal.md` and `redesign-brief.md` (the original pre-design briefs, not referenced by path
+  from any live doc — `data-retrieval/goal.md` is the exception and stays live, since
+  `solution.md`/`solution_v02.md` still actively cite it). `scheduling/` needed no changes,
+  already cleaned up earlier this session. Surviving cross-references to the moved files
+  updated: two `../message-pipeline/how-it-works.md` citations in
+  `scheduling/implementation-reference.md` repointed to `../message-pipeline/solution.md` (the
+  live successor, more useful than pointing at a frozen archive copy); two `solution_v01.md`
+  citations in `data-retrieval/solution_v02.md` repointed to `archive/solution_v01.md` (no live
+  successor exists for that one — it's a historical citation on its own merits).

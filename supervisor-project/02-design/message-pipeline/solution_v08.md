@@ -9,6 +9,9 @@ index the scheduling design already relies on), plus two small data-model clarif
 > Visual: `pipeline-flow.drawio` (draw.io / diagrams.net) — page 1 the end-to-end flow, page 2
 > the outbox + delivery guarantee, page 3 recovery, page 4 the `WorkItem` state machine.
 
+> DB model: `schema.dbml` — the four tables below as a DBML file; paste it into
+> https://dbdiagram.io for an ER diagram.
+
 ---
 
 ## [v08] What changed and why
@@ -60,7 +63,11 @@ Option A's redo-on-recovery model already works, so nothing new is needed.
 
 **Quartz, clustered mode, JDBC JobStore in SQL Server** — one pod fires a given scheduled trigger.
 
-**Unit of work = one message.** Bundled → one row per payment type (all-or-nothing); unbundled → one row per account/alias; no-scope → one config-only row.
+**Unit of work = one message.** Bundled → **one row for the whole config**, covering every
+payment type it has, merged across every scope (all-or-nothing — confirmed against the legacy
+`bikili` assembler, `ReportMessageAssembler`/`PaymentTypeGrouper`: a bundled config produces
+exactly one `ReportMessage`, whose payload lists one allocation per distinct payment type);
+unbundled → one row per account/alias; no-scope → one config-only row.
 
 **Interleaved paging + resolution.** Page through `ReportConfig` (e.g., 500 at a time) → batch-resolve the page's hierarchy → insert that page's `WorkItem` rows → advance the paging checkpoint → next page.
 
@@ -105,10 +112,21 @@ event-driven triggers not fitting the batch-launch model).
 single-pod bottleneck.
 
 **Window from the trigger's scheduled fire time**, stored on `Run`, never wall-clock. (The
-per-frequency window rules themselves are specified in `../scheduling/solution_v01.md`.)
+per-frequency window rules themselves are specified in `../scheduling/solution.md`.)
 
-**Feature flags** — checked per report type/config before build and publish; off →
-`SKIPPED_FLAG_OFF`, terminal for that run.
+**Feature flags — checked twice, never at `WorkItem` build time, both checks terminal.** Once
+per report type, at `Run` creation, before any config is touched — this is scheduling's own
+check (`../scheduling/solution.md` §4); off, and the `Run` is `SKIPPED_FLAG_OFF` immediately,
+no `WorkItem`s ever created. Once more per report type, by the relay, immediately before
+sending each `Outbox` row — off, and that row becomes `SKIPPED_FLAG_OFF` instead of `SENT`:
+the flag was off at the moment the relay reached it, so it is not sent, full stop — not
+retried, not alertable. A `WorkItem` itself carries no flag-related state: by the time one
+exists, the run-level check has already passed, and it still ends `BUILT` the moment its
+message is written to the outbox regardless of what the relay later decides — `BUILT`
+means "produced," not "delivered."
+
+A `SKIPPED_FLAG_OFF` `Run` still occupies its `(report_type, frequency, scheduled_time)` slot
+under `UQ_Run_ScheduledSlot` (`../scheduling/solution.md` §4).
 
 **Full config pass-through**, plus **the message contract's own dedup fields**: `ReportMessage`
 carries `(triggerType, configId, reportType, scopeKey, windowStart, windowEnd, executionId)`
@@ -160,6 +178,9 @@ CREATE TABLE Run (
                                                         --        period; PHT: parsed push timestamp)
     execution_id             UNIQUEIDENTIFIER NULL,
     status                   VARCHAR(20) NOT NULL,      -- IN_PROGRESS | COMPLETED | ABANDONED
+                                                        -- | SKIPPED_FLAG_OFF (report-type flag
+                                                        --   was off at Run creation; terminal —
+                                                        --   see "Feature flags" below)
     owner_pod                VARCHAR(100) NOT NULL,
     started_at               DATETIME2 NOT NULL,
     heartbeat_at             DATETIME2 NOT NULL,
@@ -191,8 +212,12 @@ CREATE TABLE WorkItem (
     scope_key        VARCHAR(200) NOT NULL,
     window_start     DATETIME2 NOT NULL,
     window_end       DATETIME2 NOT NULL,
-    status           VARCHAR(20) NOT NULL,      -- PENDING | RESOLVED[Option B only] | PUBLISHED
-                                                 -- | SKIPPED_FLAG_OFF | FAILED_POISON | OBSOLETE
+    status           VARCHAR(20) NOT NULL,      -- PENDING | RESOLVED[Option B only] | BUILT
+                                                 -- | FAILED_POISON | OBSOLETE
+                                                 -- (no flag-related state here — see "Feature
+                                                 --  flags" below: the check happens before any
+                                                 --  WorkItem exists, and again at the Outbox,
+                                                 --  never at WorkItem build time)
     attempt_count    INT NOT NULL DEFAULT 0,
     last_error       NVARCHAR(MAX) NULL,
     updated_at       DATETIME2 NOT NULL,
@@ -214,7 +239,11 @@ CREATE TABLE Outbox (
                        --   scheduled -> uuid5("SCHEDULED|{report_type}|{frequency}|{scheduled_time}")
     payload          NVARCHAR(MAX) NOT NULL,    -- ReportMessage; must include the identity tuple
                                                  -- as message fields for Executor-side dedup
-    status           VARCHAR(20) NOT NULL,      -- PENDING | SENT
+    status           VARCHAR(20) NOT NULL,      -- PENDING | SENT | SKIPPED_FLAG_OFF
+                                                 -- SKIPPED_FLAG_OFF is terminal, same as SENT:
+                                                 -- the report type's flag was off at the moment
+                                                 -- the relay reached this row, so it is not
+                                                 -- sent, ever. Not retried, not alertable.
     claimed_by       VARCHAR(100) NULL,
     claimed_at       DATETIME2 NULL,
     created_at       DATETIME2 NOT NULL,
@@ -257,7 +286,7 @@ re-running that slot is a manual action).
 
 **`Outbox` "row already exists" is a named success path** — a `UQ_Outbox_Identity` violation
 means the message is already durably recorded; `SELECT` the existing row and advance
-`WorkItem.status = PUBLISHED` rather than treating it as an error. Only a *different* failure
+`WorkItem.status = BUILT` rather than treating it as an error. Only a *different* failure
 class increments `attempt_count` toward `FAILED_POISON`.
 
 **[v08] `execution_id` per trigger — the last column of `UQ_Outbox_Identity`:**
@@ -276,8 +305,9 @@ day, so this changes nothing there; crash recovery and misfire catch-ups reuse t
 `scheduled_time` and still dedup.
 
 **[v08] `WorkItem` terminal states no longer include a claim-release step.** A `WorkItem`
-reaching `PUBLISHED` / `SKIPPED_FLAG_OFF` / `FAILED_POISON` / `OBSOLETE` simply updates its
-own row — there is no `ScopeClaim` row to delete.
+reaching `BUILT` / `FAILED_POISON` / `OBSOLETE` simply updates its own row — there is no
+`ScopeClaim` row to delete. (`SKIPPED_FLAG_OFF` is no longer a `WorkItem` state — see "Feature
+flags" above; it's a `Run`/`Outbox` terminal state now.)
 
 **Ordering — stated explicitly.** The sharded/partitioned relay gives no cross-message
 ordering guarantee, by design. Safe here because every `ReportMessage` is self-contained (it
@@ -289,8 +319,8 @@ independently. Confirm with the Executor team as an explicit contract point.
 ## Recommended architecture: Option A, in detail
 
 Per work item, in one pod: resolve → assemble → write outbox row (handling the "already
-exists" branch) → advance to `PUBLISHED`. No inter-stage persistence — `WorkItem.status` moves
-`PENDING → PUBLISHED` (or a terminal alternative) in one step once assembly succeeds.
+exists" branch) → advance to `BUILT`. No inter-stage persistence — `WorkItem.status` moves
+`PENDING → BUILT` (or a terminal alternative) in one step once assembly succeeds.
 
 **Why A over B:** recovery batches resolution per page exactly as normal processing does, so
 B's resolve-checkpoint no longer defends against a real cost. What A redoes on recovery is
@@ -306,8 +336,12 @@ surface with no stated need behind it yet.
 
 - Concrete `ProcessedInboundMessage` retention — read off the actual
   backout-queue/max-redelivery configuration for `CAMT.ONDEMAND.QUEUE` and `CAMT.PHT.QUEUE`.
-- Confirm the no-ordering-guarantee contract point, and the "two semantically-equal messages
-  distinguished by trigger metadata" acceptance, with the Executor team.
+- Confirm with the Executor team: **that they dedupe on the message fingerprint at all** — the
+  assumption the entire at-least-once-delivery guarantee rests on (see "What still guards
+  against a genuine double-publish" above) — plus the no-ordering-guarantee contract point, and
+  the "two semantically-equal messages distinguished by trigger metadata" acceptance.
 - **[v08]** Confirm or drop the on-demand `frequency = 'NEVER'` skip-and-log guard.
-- Scheduling design (trigger cadences, boundary windows, misfire policy, per-frequency
-  reporting-window calculation, pause/resume) — separate document, `../scheduling/solution_v01.md`.
+
+Scheduling (trigger cadences, boundary windows, misfire policy, per-frequency reporting-window
+calculation, pause/resume) is no longer open here — it's a finished, separate document,
+`../scheduling/solution.md`.
