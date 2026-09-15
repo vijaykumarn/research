@@ -1,11 +1,335 @@
 1. Overview
 
+This solution document describes how Commander builds and delivers report messages — reliably,
+even when the pods doing the work die mid-task, with no warning and no graceful shutdown. It
+does not cover when a report is due or what time window it covers (see
+01-commander-solution.txt, the scheduling solution), or how a configuration's accounts and
+aliases are actually resolved (see 03-commander-data-retrieval.txt).
+
 1.1 Conceptual Overview
+
+Commander's job is only this: decide which reports are due, for whom, for what time window,
+gather the payment-type data (accounts or aliases) those reports need, build a message, and put
+it on the right queue. Another application, Executor, picks those messages up and produces the
+actual reports. Commander never renders anything itself — its responsibility ends the moment
+its message is on the queue.
+
+Commander runs as many identical pods at once, sharing one database and one message queue, and
+any one of those pods can be killed at any moment, mid-task, with no warning. The design exists
+to make that survivable: Commander records its progress as database rows as it goes, rather
+than keeping anything important only in a pod's memory, so if a pod dies, another pod can read
+those rows and carry on from wherever the dead one stopped. Two tables carry the weight of
+this:
+
+  - A to-do list (WorkItem) — one row means "produce this one specific report message." Every
+    row is written before the message it describes is actually built.
+  - An outbox tray (Outbox) — a finished message is written here first, not sent straight to
+    the queue. A separate part of the application (the relay) continuously drains this tray
+    and puts messages on the real queue.
+
+Every message also carries a fingerprint — an identity built from which configuration, which
+report type, which slice of that configuration's scope, which time window, which trigger, and
+which specific occurrence of that trigger produced it. The outbox refuses to hold two rows with
+the same fingerprint, ever. That single rule is what actually prevents duplicate reports — both
+the to-do list and the fingerprint are covered in full in 1.6.
+
 1.2 Scope and Acceptance Criteria
+
+In scope:
+
+  - Deciding what messages a triggered run should produce, and in what shape — one message for
+    a whole configuration, one per account or alias, or one config-only message (the bundling
+    rule, 1.7).
+  - Writing that work down durably before doing it, then building each message from there.
+  - Delivering each finished message onto the outbound queue reliably, without duplicating or
+    silently losing it.
+  - Recovering a run whose owning pod died, and resuming exactly where it stopped.
+  - The three ways a run can start: a scheduled firing, an on-demand request, and the inbound
+    PHT balance-push flow.
+
+Out of scope:
+
+  - Deciding when a report is due and what time window it covers — that is scheduling
+    (01-commander-solution.txt). This document takes the five facts scheduling hands off (1.6)
+    as a given.
+  - Resolving a configuration's actual accounts and aliases from its agreement scope — that is
+    the Data Retrieval layer (03-commander-data-retrieval.txt). This document treats that data
+    as something it requests and gets back.
+  - Producing the actual report document a customer receives — that is Executor, a separate
+    downstream application. Commander's output is only the instruction Executor acts on.
+
+Acceptance criteria — to be verified once this is implemented, under a real clustered
+deployment:
+
+Normal operation:
+
+  - A scheduled run, an on-demand request, and a PHT push each go through the same core loop
+    (resolve the data, build the message, write it to the outbox, mark the to-do item done)
+    and each produces exactly the messages the bundling rule says it should (1.7).
+  - A scheduled run and an on-demand request targeting the same configuration and window both
+    produce and deliver their own message — neither suppresses the other (decision 4 in 1.4).
+  - No two messages with the same fingerprint are ever both delivered, however a duplicate
+    build happens to arise (decision 3 in 1.4).
+  - A pod killed mid-run is recovered correctly: a scheduled run resumes via the watchdog
+    (1.6, 1.7.D); an on-demand or PHT run resumes via the queue's own redelivery, without
+    reprocessing a message that actually finished just before the crash.
+  - Feature flags are honoured at both of their checkpoints (decision 7 in 1.4), and nothing
+    in between ever re-checks or overrides that.
+
+Recovery and failure handling:
+
+  - A to-do item that keeps failing is marked FAILED_POISON after a bounded number of
+    attempts, raises an alert, and does not block the rest of the run (1.7.C).
+  - A to-do item whose target has genuinely been removed, confirmed by a real lookup rather
+    than a failed or timed-out one, is marked OBSOLETE — logged, not alerted (1.7.C).
+  - A scheduled run that keeps failing recovery past a set number of attempts is marked
+    ABANDONED, with an alert for a person, rather than being retried forever.
+  - A repeated attempt to create a Run for a slot that already has one, or to write an outbox
+    row that already exists, is treated as a normal successful outcome, not an error (1.4,
+    1.7).
+
 1.3 Information Relevant for Prioritization
+
 1.4 Architectural Decisions
+
+  1. Progress is written down as database rows before the corresponding work happens, never
+     held only in a pod's memory. The to-do list (1.6) is written in full for a page of
+     configurations before any message from that page is built. This is what makes a mid-task
+     crash survivable — another pod can read exactly what was planned and what's already done,
+     and carry on from there.
+
+  2. Finished messages go into an outbox tray first, never straight onto the queue. Writing to
+     the database and sending to a queue are two different systems, so there is no way to do
+     both as one all-or-nothing step. Sending first and recording second risks sending twice if
+     a crash happens in between; recording first and sending second risks silently losing the
+     message instead. The outbox avoids both: writing a message to it is the moment it counts
+     as built, and sending it onward from there is a separate step that is always safe to
+     retry.
+
+  3. Every message carries a fingerprint, and the outbox refuses to hold two rows with the same
+     one. This is the actual mechanism that prevents duplicate reports, not a separate lock. If
+     the same message gets built twice — most commonly a run and its own crash-recovery both
+     reaching the same item — the first row in wins, and whichever pod arrives second simply
+     sees "already there, nothing to do" and moves on.
+
+  4. A scheduled run and an on-demand request are deliberately not deduplicated against each
+     other. A message's fingerprint includes which trigger produced it, so a scheduled message
+     and an on-demand request for the very same configuration and window are two genuinely
+     different fingerprints — both get built, and both get delivered. This was a confirmed
+     product decision: an on-demand request must never be silently swallowed just because a
+     scheduled run already covered that window.
+
+  5. The cross-trigger lock that used to make one trigger wait for another has been removed.
+     An earlier design had a table whose whole purpose was to make a scheduled run and an
+     on-demand request for the same configuration take turns rather than both proceeding. That
+     is the opposite of decision 4 above, once it was confirmed both should always be
+     delivered — so the lock added real complexity (an expiry, a locking query, a "claim
+     expires during recovery" edge case) for no remaining benefit, and was dropped entirely.
+
+  6. A scheduled message's identity is derived from its scheduled time, not a fixed
+     placeholder. Earlier drafts gave every scheduled-path message the same placeholder
+     identity, which meant a real firing and any later firing for the same window collapsed
+     into one message — fine in production, since a given window only fires once, but it broke
+     fast-cadence testing, where every test tick is supposed to produce a fresh message. Basing
+     the identity on the scheduled time fixes this: the same slot (a crash recovery, or a
+     misfire catch-up landing on the same boundary) still produces the same identity and still
+     deduplicates, while a genuinely distinct firing (a fast test tick, or a manual re-run with
+     no explicit slot) produces a fresh one.
+
+  7. Feature flags are checked twice, and never anywhere in between. Once per report type,
+     before a run even starts — scheduling's own check (01-commander-solution.txt, 1.7). If
+     that is off, nothing is ever handed to this pipeline at all. Once more, per report type,
+     immediately before the relay sends a given outbox row. If that is off, the row is marked
+     done without being sent — final, not retried, not alerted. A to-do item itself carries no
+     flag-related state of its own: by the time one exists, the run-level check has already
+     passed, and it always finishes as "built" regardless of what the relay later decides about
+     sending it.
+
+  8. Recovering a scheduled run uses a dedicated watchdog job, deliberately separate from
+     Quartz's own crash-recovery feature. Quartz's own recovery only knows how to re-fire a job
+     once — it has no visibility into a run already in progress, which pages it has reached, or
+     what it has already checkpointed. The watchdog understands all of that, so it is the one
+     that resumes a run genuinely partway through, while Quartz's own recovery stays scoped to
+     the narrower case of a pod dying before a run's tracking record even exists yet (already
+     covered in 01-commander-solution.txt).
+
+  9. Published messages carry no ordering guarantee. The relay that drains the outbox is
+     sharded across pods for throughput, and makes no promise about the order messages land on
+     the queue in. This is accepted because every message is self-contained — it carries its
+     own window and its own identity — so Executor is expected to process each one
+     independently, without depending on order.
+
+  10. A run's reporting window is frozen once, at the start, from the trigger's scheduled time
+      — never recalculated from wall-clock time later. This means a run that gets delayed, or
+      recovered after a crash, still produces exactly the window it was always meant to, rather
+      than drifting to reflect whenever it actually happened to run.
+
 1.5 Assumptions and Pre-Requisites
+
+  - Many identical pods run at once, sharing one database and one message queue, and any one of
+    them can be killed at any moment, mid-task, with no warning and no graceful shutdown.
+  - A downstream application, Executor, exists, consumes the published messages, and is
+    expected to deduplicate on each message's fingerprint, accept two messages that are
+    semantically equal but distinguished only by their trigger metadata, and process messages
+    independently with no dependence on delivery order. This is stated as a requirement on
+    Executor, not yet confirmed with the team that owns it (2.16).
+  - The queues carrying on-demand requests and PHT pushes have a real, known redelivery /
+    backout configuration, which determines how long processed-message ids need to be kept to
+    safely ignore a late redelivery.
+  - A clustered Quartz scheduler — the same one used for report timetables
+    (01-commander-solution.txt) — is available, and is reused here to run the watchdog job on
+    its own short interval.
+  - The product owner's guarantee that no on-demand request will ever target a PHT-only
+    recipient holds; whether to also defend against it in code is an open decision (2.16).
+
 1.6 Logical View - Architecture Scope
+
+The pipeline is made up of the following logical components:
+
+  - Run — one row per triggered run: a scheduled firing, an accepted on-demand request, or an
+    accepted PHT push. Holds a heartbeat, how far the run has got, and (for a scheduled run) the
+    same five facts scheduling handed off. A report-type feature flag that is off at this point
+    stops the run here, final — nothing further is ever created.
+
+  - WorkItem, the to-do list — one row per message the pipeline intends to produce. Written in
+    full, page by page, before any of those messages are actually built, so a crash never loses
+    track of what was planned.
+
+  - Outbox, the tray — one row per finished message, held here until the relay sends it. This
+    is also where duplicate prevention actually happens: every row carries a fingerprint (an
+    identity built from the configuration, report type, data slice, time window, trigger, and
+    the specific occurrence of that trigger), and the tray refuses to ever hold two rows with
+    the same one.
+
+  - The relay — a loop every pod runs at once, continuously draining finished messages from the
+    outbox tray onto the real outbound queue. Unlike a scheduled firing, which wants exactly
+    one pod, the relay wants all pods working in parallel, for throughput; a claim on each row
+    is what stops two pods sending the same one twice.
+
+  - The watchdog — a clustered job, reusing the same Quartz clustering scheduling already uses,
+    that watches for a run whose owning pod has gone quiet (a stale heartbeat) and resumes it.
+    Deliberately separate from Quartz's own crash-recovery feature (decision 8 in 1.4).
+
+  - ProcessedInboundMessage — a record of which incoming queue messages (on-demand requests,
+    PHT pushes) have already been fully handled, so a redelivered message after a near-miss
+    crash doesn't get processed a second time.
+
+  - The three trigger listeners — one for each way a run can start: a scheduled firing (fed by
+    scheduling's handoff), an on-demand request (a queue message carrying a list of
+    configuration ids), and a PHT push (an inbound message carrying account balances). Each
+    feeds into the same core loop described in 1.7.
+
+Handoff boundaries:
+
+  - From Scheduling (01-commander-solution.txt): exactly five facts per scheduled firing —
+    report type, frequency, scheduled time, window start, window end. This pipeline creates the
+    Run for that firing and takes it from there.
+  - To the Data Retrieval layer (03-commander-data-retrieval.txt): resolving a configuration's
+    agreement scope — the payment types, accounts, and aliases beneath it — is requested and
+    received back from there, not done by this pipeline itself.
+  - To Executor: the finished, published message is the full extent of what this pipeline hands
+    over. It has no visibility into anything Executor does with it afterward.
+
+Visual reference: pipeline-flow.drawio (draw.io / diagrams.net) — page 1 the end-to-end flow,
+page 2 the outbox and its delivery guarantee, page 3 recovery, page 4 the WorkItem state
+machine.
+
 1.7 Workflow / Process Flow
+
+A. The three ways a run starts
+
+  Scheduled:
+
+    1. The scheduler fires, clustered, so exactly one pod picks up each firing
+       (01-commander-solution.txt).
+    2. That pod creates one Run (a tracking record) for this firing.
+    3. It checks a feature flag for that report type. Off, and the run stops right there,
+       final.
+    4. Flag on, and it works through the matching configurations in pages of around 500 at a
+       time: fetch the next page, resolve all of that page's payment-type data in one batch
+       (not one lookup per configuration), decide how many messages each configuration
+       produces (B, below), write those as to-do rows, then for each one: build the message,
+       write it to the outbox, mark it done — before moving to the next page.
+
+  On-demand:
+
+    1. A message arrives on the on-demand queue, carrying a list of configuration ids.
+    2. The pod that picks it up mints a fresh identity for this request — nothing is supplied
+       by the caller.
+    3. It creates a Run and runs the same resolve-build-outbox-done loop as the scheduled path,
+       for just those configurations.
+    4. It records the incoming message's id as handled and acknowledges the queue.
+
+  PHT (the external balance push):
+
+    1. An inbound message arrives carrying account balances.
+    2. The pod parses it and works out the recipient from an identifier in the message.
+    3. It looks up that recipient's configuration — the one the scheduler never touches, since
+       it's marked with a frequency scheduling structurally excludes.
+    4. It mints a fresh identity for this request, the same as on-demand.
+    5. It builds one message carrying those pushed balances and writes it to the outbox.
+    6. It records the incoming message as handled and acknowledges the queue.
+
+B. The bundling rule — what "one to-do item" means
+
+  A single configuration can turn into one message or many, depending on how it's set up:
+
+    - Bundled — one message for the whole configuration, covering every payment type it has,
+      each carrying all of that type's accounts or aliases, merged across every scope.
+    - Unbundled — one message per account or alias.
+    - No scope attached — one message covering just the configuration itself.
+
+  The to-do rows are written to match this exactly, which is also why they can only be written
+  after a configuration's data has been resolved — there's no way to know how many messages a
+  configuration produces before then.
+
+C. How a to-do item ends
+
+  Every to-do item finishes in exactly one of these states:
+
+    - Built — its message is in the outbox. This means produced, not delivered; what happens
+      to it after is covered under "reliability details" below.
+    - Failed (poison) — tried several times and keeps failing, usually because of bad data.
+      Final, and it raises an alert; the rest of the run carries on regardless.
+    - Obsolete — during recovery, the account or scope this item was for turned out to have
+      been genuinely removed, confirmed by an actual lookup rather than one that merely failed
+      or timed out. Logged, done, not an alert. A lookup that only failed or timed out is
+      treated as an ordinary failure and retried instead — a temporary database hiccup must
+      never quietly retire real work.
+
+D. When a pod dies
+
+  A scheduled run: while a run is active, its pod updates a heartbeat on the Run record
+  regularly. The watchdog (1.6) is a clustered job that fires on a short interval, so only one
+  pod's watchdog tick is ever scanning for a stale heartbeat at a time — and that same pod is
+  the one that discovers a stale run, claims it (safely, so only one pod wins even if two ticks
+  overlap), and resumes it immediately, in that same execution. Resuming means two things:
+  re-fetching and rebuilding any to-do items left unfinished (safe to redo, since the outbox's
+  fingerprint rule simply rejects anything already built before the crash), and continuing to
+  page forward from wherever the dead pod left off, exactly as normal processing would. A run
+  that keeps failing recovery past a set number of attempts is marked abandoned, with an alert
+  for a person. (A pod dying before it even manages to create the Run in the first place is a
+  different, narrower case, covered by the scheduler's own recovery instead —
+  01-commander-solution.txt.)
+
+  An on-demand or PHT run: much simpler, and needs no watchdog. These arrive as queue messages,
+  so if a pod dies before finishing one, the queue itself automatically redelivers it to another
+  pod, which starts over. To avoid reprocessing a message that actually finished just before the
+  crash-and-redeliver, Commander records the id of every incoming message it completes and skips
+  any it has already seen.
+
+E. Reliability details worth knowing
+
+  - A scheduled run and an on-demand request can target the very same configuration and window
+    on purpose, and both are produced and delivered — they carry different fingerprints, so
+    neither blocks or suppresses the other (decision 4 in 1.4).
+  - Feature flags are checked at exactly two points and nowhere in between, and both checks are
+    final (decision 7 in 1.4). A to-do item always ends up "built" once it exists, regardless of
+    what the relay later decides about actually sending it.
+  - There is no ordering guarantee between published messages (decision 9 in 1.4). Every
+    message is self-contained, and Executor is expected to process each one independently.
+  - The reporting window always reflects when a run was scheduled for, never when it actually
+    ran (decision 10 in 1.4) — so a delayed or recovered run still produces exactly the window
+    it was meant to.
 
 2. Implementation Reference
