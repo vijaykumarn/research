@@ -94,8 +94,8 @@ A few notes:
    pipeline the five facts from §1. The pipeline takes it from there — finding the matching
    configurations, resolving their data, building and publishing the messages.
 
-   A skipped Run still occupies that slot — getting that report later needs an explicit trigger
-   (§7), the same as recovering any other slot the automatic path didn't produce (§6).
+   A skipped Run still occupies that slot — that's final, not something to backfill (§6). If
+   that window's report is still wanted, that's an on-demand request instead, not a retry.
 
 **Daylight saving.** Clocks skip an hour forward each spring and repeat an hour each autumn. A
 fire time that falls in the skipped stretch shifts forward to the next real moment; one that
@@ -128,7 +128,7 @@ inside the gap or overlap — take the end-of-day window, normally a full 24 hou
 day it's only 23 hours, because the day it covers lost an hour to the clock jump; on the autumn
 day it's 25 hours, because that day gained an hour back. Nothing corrects for this — the window
 is simply "midnight to midnight" by the clock, whatever that comes out to in elapsed time that
-day. Expected, not a bug.Is 
+day. Expected, not a bug.
 
 ---
 
