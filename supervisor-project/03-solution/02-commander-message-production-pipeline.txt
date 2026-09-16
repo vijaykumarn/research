@@ -3,7 +3,7 @@
 This solution document describes how Commander builds and delivers report messages — reliably,
 even when the pods doing the work die mid-task with no warning and no graceful shutdown. It
 does not cover when a report is due or what time window it covers (see
-01-commander-solution.txt, the scheduling solution), or how a configuration's agreement scope —
+01-commander-scheduling.txt, the scheduling solution), or how a configuration's agreement scope —
 the payment types, accounts, and aliases beneath it — is actually resolved (see
 03-commander-data-retrieval.txt).
 
@@ -58,7 +58,7 @@ In scope:
 Out of scope:
 
   - Deciding when a report is due and what time window it covers — that is scheduling
-    (01-commander-solution.txt). This document takes the five facts scheduling hands off (1.6)
+    (01-commander-scheduling.txt). This document takes the five facts scheduling hands off (1.6)
     as a given.
   - Resolving a configuration's agreement scope — the payment types, accounts, and aliases
     beneath it — that is the Data Retrieval layer (03-commander-data-retrieval.txt). This
@@ -149,7 +149,7 @@ Recovery and failure handling:
      no explicit slot) produces a fresh one.
 
   7. Feature flags are checked twice, and never anywhere in between. Once per report type,
-     before a run even starts — scheduling's own check (01-commander-solution.txt, 1.7). If
+     before a run even starts — scheduling's own check (01-commander-scheduling.txt, 1.7). If
      that is off, nothing is ever handed to this pipeline at all. Once more, per report type,
      immediately before the relay sends a given outbox row. If that is off, the row is marked
      done without being sent — final, not retried, not alerted. A to-do item itself carries no
@@ -163,7 +163,7 @@ Recovery and failure handling:
      what it has already checkpointed. The watchdog understands all of that, so it is the one
      that resumes a run genuinely partway through, while Quartz's own recovery stays scoped to
      the narrower case of a pod dying before a run's tracking record even exists yet (already
-     covered in 01-commander-solution.txt).
+     covered in 01-commander-scheduling.txt).
 
   9. Published messages carry no ordering guarantee. The relay that drains the outbox is
      sharded across pods for throughput, and makes no promise about the order messages land on
@@ -176,10 +176,45 @@ Recovery and failure handling:
       recovered after a crash, still produces exactly the window it was always meant to, rather
       than drifting to reflect whenever it actually happened to run.
 
+  11. A failure is classified as infrastructure or data at the point it's logged, and a spike of
+      infrastructure failures raises its own, separate, aggregate alert. Data-retrieval's
+      tri-state resolution already gives this distinction for free — a query that failed or
+      timed out is a different outcome from one that confirmed the data is genuinely gone. Using
+      that distinction to drive a systemic-looking alert (rather than letting a database problem
+      surface only as many individual FAILED_POISON items) is what lets an operator recognize a
+      database issue quickly enough to pause the affected schedules, rather than mistaking a
+      systemic problem for a pile of unrelated bad data (see db-mq-failure-analysis.md,
+      01-requirements, for the fuller reasoning).
+
+  12. Retrying into a struggling dependency uses backoff with jitter, not a fixed interval. This
+      applies to both database retries and the relay's retry when a publish attempt fails. A
+      fixed retry interval, repeated by every pod at once, risks turning a recovering database
+      or message queue back into a struggling one the moment it comes back up; spreading retries
+      out avoids adding a synchronized load spike on top of a dependency that is already
+      recovering.
+
+  13. If the relay cannot reach the message queue itself at publish time — as opposed to a
+      specific message failing to deliver, which is what the dead-letter mechanism is for — the
+      outbox row it was trying to send simply stays PENDING. No separate mechanism is needed:
+      the relay's own continuous draining loop picks that row up again on its next pass, once
+      the queue is reachable again. Nothing is lost and nothing needs to be specially detected;
+      this falls directly out of the outbox already being the durable, safely-retryable record
+      of a finished message (decision 2).
+
 1.5 Assumptions and Pre-Requisites
 
   - Many identical pods run at once, sharing one database and one message queue, and any one of
     them can be killed at any moment, mid-task, with no warning and no graceful shutdown.
+  - A one-off, transient failure against that shared database or queue (a dropped connection, a
+    single query timing out) is expected and already handled by the ordinary retry path (the
+    attempt-count mechanism in 1.7.C, and the tri-state resolution in the Data Retrieval layer).
+    A sustained
+    outage of either is a different situation entirely: if the database is genuinely
+    unreachable, scheduling itself cannot fire anything, so this pipeline has nothing to
+    process in the first place; if the message queue is genuinely unreachable, work keeps being
+    produced and safely held in the outbox (decision 13) but nothing gets delivered until it
+    returns. Neither case needs new machinery here — see db-mq-failure-analysis.md
+    (01-requirements) for the full reasoning and what it does and doesn't call for.
   - A downstream application, Executor, exists, consumes the published messages, and is
     expected to deduplicate on each message's fingerprint, accept two messages that are
     semantically equal but distinguished only by their trigger metadata, and process messages
@@ -189,7 +224,7 @@ Recovery and failure handling:
     backout configuration, which determines how long processed-message ids need to be kept to
     safely ignore a late redelivery.
   - A clustered Quartz scheduler — the same one used for report timetables
-    (01-commander-solution.txt) — is available, and is reused here to run the watchdog job on
+    (01-commander-scheduling.txt) — is available, and is reused here to run the watchdog job on
     its own short interval.
   - It is assumed the product owner's guarantee is reliable: no on-demand request will ever
     target a PHT-only recipient. Whether Commander should also guard against this in code
@@ -235,7 +270,7 @@ The pipeline is made up of the following logical components:
 
 Handoff boundaries:
 
-  - From Scheduling (01-commander-solution.txt): exactly five facts per scheduled firing —
+  - From Scheduling (01-commander-scheduling.txt): exactly five facts per scheduled firing —
     report type, frequency, scheduled time, window start, window end. This pipeline creates the
     Run for that firing and takes it from there.
   - To the Data Retrieval layer (03-commander-data-retrieval.txt): resolving a configuration's
@@ -255,7 +290,7 @@ A. The three ways a run starts
   Scheduled:
 
     1. The scheduler fires, clustered, so exactly one pod picks up each firing
-       (01-commander-solution.txt).
+       (01-commander-scheduling.txt).
     2. That pod creates one Run (a tracking record) for this firing.
     3. It checks a feature flag for that report type. Off, and the run stops right there,
        final.
@@ -325,7 +360,7 @@ D. When a pod dies
   that keeps failing recovery past a set number of attempts is marked abandoned, with an alert
   for a person. (A pod dying before it even manages to create the Run in the first place is a
   different, narrower case, covered by the scheduler's own recovery instead —
-  01-commander-solution.txt.)
+  01-commander-scheduling.txt.)
 
   An on-demand or PHT run: much simpler, and needs no watchdog. These arrive as queue messages,
   so if a pod dies before finishing one, the queue itself automatically redelivers it to another
@@ -346,5 +381,18 @@ E. Reliability details worth knowing
   - The reporting window always reflects when a run was scheduled for, never when it actually
     ran (decision 10 in 1.4) — so a delayed or recovered run still produces exactly the window
     it was meant to.
+  - A pod's heartbeat write failing because the database is unreachable is safe, even once the
+    database comes back. The watchdog may then perceive several runs as stale all at once, but
+    the same CAS-based single-claim that already protects against two watchdog ticks overlapping
+    (1.6, 1.7.D) applies here too — only one pod ever actually resumes a given run, regardless of
+    how many runs look stale at the same moment.
+  - Pause and Resume (01-commander-scheduling.txt) only stop scheduled firings — they have no
+    effect on on-demand requests or PHT pushes, which arrive over the message queue rather than
+    through Quartz. During a known database problem, pausing the affected schedules is only a
+    partial mitigation: on-demand and PHT traffic keeps arriving and keeps hitting the same
+    struggling database, relying on the queue's own redelivery as its safety net rather than on
+    anything this pipeline does deliberately. This is safe (no data loss, no duplication) but
+    potentially noisy, and is an open question for the team — see db-mq-failure-analysis.md
+    (01-requirements).
 
 2. Implementation Reference

@@ -96,7 +96,12 @@ Recovery and failure handling:
      whether from an outage or a deliberate pause — is not automatically caught up. The
      timetable simply resumes at its next natural time. Recovering a missed slot is always a
      deliberate operator action (backfill), available for any missed slot, sub-daily or
-     end-of-day alike, and is idempotent to re-issue.
+     end-of-day alike, and is idempotent to re-issue. A database outage is the single most
+     likely real-world cause of "the whole cluster is down" (decision 1, and the assumption in
+     1.5 about Quartz's dependency on the database) — it is handled the same way as any other
+     outage: nothing is caught up automatically, and recovering whichever slots actually matter
+     is a deliberate backfill once the database is healthy again, the same as after any other
+     outage.
 
   3. Every-2-hour and every-4-hour frequencies re-classified as Boundary, anchored to
      midnight. This is a deliberate departure from the legacy system (the system Commander is
@@ -145,12 +150,20 @@ Recovery and failure handling:
     converted to absolute time only for the outgoing message.
   - The business day is Monday to Friday. There is no holiday calendar — a weekday holiday
     still runs its scheduled firings and produces a (possibly near-empty) report.
-  - The deployment runs as multiple pods in a clustered environment. Scheduling's choice of a clustered, job-store-backed
-   scheduler to guarantee exactly one pod picks up each firing (decision 1 in 1.4) depends on
-    that being true.
+  - The deployment runs as multiple pods in a clustered environment. Scheduling's choice of a
+    clustered, job-store-backed scheduler to guarantee exactly one pod picks up each firing
+    (decision 1 in 1.4) depends on that being true.
   - A feature-flag mechanism (a simple on/off switch per report type) exists and is
     addressable per report type, so scheduling can gate a firing before handing work to the
     pipeline.
+  - Quartz's own job store — the thing that lets it know what is due and coordinate which pod
+    picks up a firing — lives in the same shared database as the rest of the deployment. If
+    that database is unreachable, Quartz cannot determine what's due or coordinate anything, so
+    scheduling stops entirely: nothing fires at all until the database is reachable again. This
+    is treated as an inherent consequence, not something scheduling can resilience around —
+    but it does mean a database outage needs its own infrastructure-level alerting, since
+    scheduling's own alerting depends on scheduling being able to run in the first place. See
+    db-mq-failure-analysis.md (01-requirements) for the fuller analysis.
 
 1.6 Logical View - Architecture Scope
 
@@ -257,11 +270,13 @@ A. When a schedule fires
 B. When a firing is missed
 
   A firing can go missing for more reasons than an outage alone — the whole system being down
-  is the most common cause, but it also happens if an operator has deliberately paused that
-  schedule (for example, to protect production during an environment issue). Whatever the
-  cause, it is handled the same way: the automatic policy is to do nothing. The missed slot is
-  skipped entirely; the timetable simply resumes at its next natural time and produces that
-  window normally. There is no automatic catch-up, ever, for any report.
+  is the most common cause (most often because the shared database is unreachable, which stops
+  scheduling entirely, see 1.5), but it also happens if an operator has deliberately paused that
+  schedule (for example, to protect production during an environment issue, or because they've
+  been informed of a database or message-queue problem and are riding it out on purpose).
+  Whatever the cause, it is handled the same way: the automatic policy is to do nothing. The
+  missed slot is skipped entirely; the timetable simply resumes at its next natural time and
+  produces that window normally. There is no automatic catch-up, ever, for any report.
 
   Recovering a missed slot is always a deliberate action, available for any missed slot,
   sub-daily or end-of-day alike. An operator (or a small admin endpoint) fires the schedule
@@ -271,7 +286,10 @@ B. When a firing is missed
 
   This is also the intended shape of a deliberate pause: pause the schedule to ride out the
   issue, fix it, resume for firings going forward, then — once it is agreed which slots
-  actually matter — backfill exactly those.
+  actually matter — backfill exactly those. This is the operator's main tool during a known
+  database issue too: pause the affected schedules once informed there's a problem, resume once
+  the database is confirmed healthy, and backfill afterward if any of the missed windows still
+  matter (see db-mq-failure-analysis.md, 01-requirements, for the fuller reasoning).
 
 C. Reliability behaviours worth knowing
 
