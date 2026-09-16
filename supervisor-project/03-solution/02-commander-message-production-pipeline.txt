@@ -260,10 +260,11 @@ A. The three ways a run starts
     3. It checks a feature flag for that report type. Off, and the run stops right there,
        final.
     4. Flag on, and it works through the matching configurations in pages of around 500 at a
-       time: fetch the next page, resolve all of that page's payment-type data in one batch
-       (not one lookup per configuration), decide how many messages each configuration
-       produces (B, below), write those as to-do rows, then for each one: build the message,
-       write it to the outbox, mark it done — before moving to the next page.
+       time: fetch the next page, resolve each configuration's own metadata and its agreement
+       scope — payment types, accounts, and aliases — in one batch (not one lookup per
+       configuration), decide how many messages each configuration produces (B, below), write
+       those as to-do rows, then for each one: build the message, write it to the outbox, mark
+       it done — before moving to the next page.
 
   On-demand:
 
