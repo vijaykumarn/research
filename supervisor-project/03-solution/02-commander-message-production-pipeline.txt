@@ -38,15 +38,22 @@ the to-do list and the fingerprint are covered in full in 1.6.
 
 In scope:
 
+  - The three ways a run can start: a scheduled firing, an on-demand request, and the inbound
+    PHT balance-push flow (1.7.A).
   - Deciding what messages a triggered run should produce, and in what shape — one message for
     a whole configuration, one per account or alias, or one config-only message (the bundling
-    rule, 1.7).
-  - Writing that work down durably before doing it, then building each message from there.
-  - Delivering each finished message onto the outbound queue reliably, without duplicating or
-    silently losing it.
-  - Recovering a run whose owning pod died, and resuming exactly where it stopped.
-  - The three ways a run can start: a scheduled firing, an on-demand request, and the inbound
-    PHT balance-push flow.
+    rule, 1.7.B).
+  - Writing that work down durably (the to-do list) before any message is built, so a mid-task
+    crash never loses track of what was planned (decision 1 in 1.4).
+  - Preventing duplicate messages via the fingerprint every message carries, and delivering
+    each finished message onto the outbound queue reliably, without silently losing it
+    (decisions 2 and 3 in 1.4).
+  - Treating a scheduled run and an on-demand request for the same configuration and window as
+    independent — both produced and delivered, neither suppressing the other (decision 4 in
+    1.4).
+  - Checking each report type's feature flag at the two points that matter — before a run
+    starts, and again right before sending — with both checks being final (decision 7 in 1.4).
+  - Recovering a run whose owning pod died, and resuming exactly where it stopped (1.6, 1.7.D).
 
 Out of scope:
 
@@ -69,8 +76,9 @@ Normal operation:
     and each produces exactly the messages the bundling rule says it should (1.7).
   - A scheduled run and an on-demand request targeting the same configuration and window both
     produce and deliver their own message — neither suppresses the other (decision 4 in 1.4).
-  - No two messages with the same fingerprint are ever both delivered, however a duplicate
-    build happens to arise (decision 3 in 1.4).
+  - If the same message ever gets built more than once — most commonly when a run and its own
+    crash-recovery both reach the same item — the fingerprint rule guarantees only one copy is
+    ever delivered, never two (decision 3 in 1.4).
   - A pod killed mid-run is recovered correctly: a scheduled run resumes via the watchdog
     (1.6, 1.7.D); an on-demand or PHT run resumes via the queue's own redelivery, without
     reprocessing a message that actually finished just before the crash.
@@ -83,8 +91,11 @@ Recovery and failure handling:
     attempts, raises an alert, and does not block the rest of the run (1.7.C).
   - A to-do item whose target has genuinely been removed, confirmed by a real lookup rather
     than a failed or timed-out one, is marked OBSOLETE — logged, not alerted (1.7.C).
-  - A scheduled run that keeps failing recovery past a set number of attempts is marked
-    ABANDONED, with an alert for a person, rather than being retried forever.
+  - This is distinct from a to-do item failing (above): if the watchdog repeatedly claims the
+    same stale run and the attempt to resume the run itself keeps failing — not an individual
+    to-do item, the resumption as a whole — a counter on the Run increases each time. Once
+    that counter passes a set limit, the Run is marked ABANDONED instead of being retried
+    again, and a person is alerted.
   - A repeated attempt to create a Run for a slot that already has one, or to write an outbox
     row that already exists, is treated as a normal successful outcome, not an error (1.4,
     1.7).
@@ -180,8 +191,10 @@ Recovery and failure handling:
   - A clustered Quartz scheduler — the same one used for report timetables
     (01-commander-solution.txt) — is available, and is reused here to run the watchdog job on
     its own short interval.
-  - The product owner's guarantee that no on-demand request will ever target a PHT-only
-    recipient holds; whether to also defend against it in code is an open decision (2.16).
+  - It is assumed the product owner's guarantee is reliable: no on-demand request will ever
+    target a PHT-only recipient. Whether Commander should also guard against this in code
+    anyway, as a safety net in case that guarantee is ever wrong, is still an open decision
+    (2.16).
 
 1.6 Logical View - Architecture Scope
 
