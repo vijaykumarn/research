@@ -111,7 +111,7 @@ flowchart TB
 
 4. **`EVERY_2_HOURS` and `EVERY_4_HOURS` are Boundary, anchored to midnight, not Rolling.** Anchoring to midnight means the first window of the day starts at 00:00 — no gap between midnight and the first firing — which also brings these two frequencies in line with how the "N times a day" Boundary frequencies already behave.
 
-5. **Clustered scheduler with job recovery enabled.** The scheduler runs in clustered mode, so exactly one pod picks up any given firing. Job recovery closes a specific gap Assembly's own recovery structurally cannot see: a pod dying before it ever invokes Assembly's entry point for a firing leaves nothing for Assembly to find. Quartz's own clustered recovery re-fires that job on a live pod instead.
+5. **Clustered scheduler with job recovery enabled.** The scheduler runs in clustered mode, so exactly one pod picks up any given firing, and job recovery is turned on so a firing is never silently lost if its pod dies mid-startup. This is deliberate defense-in-depth: Assembly has its own recovery too, but only for work it already knows about — job recovery covers the narrower window before that (7.2).
 
 6. **Fixed, explicit daylight-saving rules, not a library default.** The shift-forward and fire-once behaviours (Section 2, above) are pinned as a named resolver with their own tests, so how Scheduling behaves across a clock transition is a decision the team consciously made, not an accident of whichever library version happens to be running.
 
