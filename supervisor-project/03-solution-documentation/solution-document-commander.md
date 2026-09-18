@@ -18,7 +18,7 @@ For each report-generation request, Commander determines what is due, retrieves 
 
 Commander is made up of three sub-components. 
 
-- **Scheduling** - Reads and validates the deploy-time schedule configuration, builds and registers the underlying Quartz jobs and triggers, keeps the registration clean across redeploys, and runs the clustered scheduler. It also provides the window-calculation logic — rolling, boundary, or calendar-day — as a shared capability.
+- **Scheduling** - Reads and validates the deploy-time schedule configuration, builds and registers the underlying Quartz jobs and triggers, keeps the registration clean across redeploys, and runs the clustered scheduler. It also provides the window-calculation logic — rolling, boundary, or calendar-day — as a shared capability. Documented in full in its own companion document, `commander-scheduling.md`.
 
 - **Assembly** - Owns the entry point for every report trigger: a scheduled firing initiated by Scheduling, an on-demand request, or an inbound account balance push. Regardless of the trigger, Assembly follows the same core flow: resolve the reporting window, create a tracking record, verify that the report type is enabled, retrieve the required data, determine the request shape (bundled, unbundled, or configuration-only), build the report-generation request(s), and write each completed request to the outbox. The outbox is the handoff point from Assembly to Delivery.
 
@@ -48,16 +48,7 @@ flowchart LR
 
 ### Scheduling
 
-- **Trigger loader / generator** — reads the deploy-time schedule configuration, expands any entry that lists several report types into one independent schedule per report type, generates the underlying cron timing expression(s) from each schedule's interval or boundary-list specification, and builds and registers the resulting job and trigger definitions with the clustered scheduler at startup.
-- **Startup reconciliation** — also at startup, before the scheduler begins running, removes any triggers left over from a prior configuration so nothing fires against a stale schedule.
-- **Window function** — a pure calculation that resolves a scheduled fire time to a (window start, window end) pair, exposed as a shared capability Assembly calls into. Every report frequency falls into one of three window shapes:
-  - **Rolling** — a fixed look-back ending at the fire time (e.g. the last 30 minutes).
-  - **Boundary** — the stretch since the previous checkpoint today, with midnight as an implicit first checkpoint.
-  - **Calendar-day** — the entire previous calendar day, delivered the next morning.
-
-  All window math happens in one configured business timezone (Europe/Stockholm) and is converted to absolute time for the outgoing request. Daylight-saving is handled explicitly: a fire time in the skipped spring hour shifts forward to the next real moment; a fire time in the repeated autumn hour fires only at its first occurrence.
-- **Clustered scheduler layer** — fires triggers such that exactly one pod across the deployment handles any given firing, with job recovery enabled so a firing is never silently lost if its pod dies before completing — Quartz simply re-fires it on a live pod.
-- **Admin control surface** — an authenticated, admin-only set of actions — Run now, Backfill, Pause, Resume, Status — addressed by (report type, frequency).
+Scheduling's full architecture — startup sequence, the window-calculation function and its three shapes, cron generation, the clustered scheduler, and the admin control surface — is documented in its own companion document, `commander-scheduling.md`. The facts Assembly depends on directly are covered below, under Handoff boundaries.
 
 ### Assembly
 
@@ -93,18 +84,11 @@ flowchart LR
 
 **B. When a firing is missed**
 
-A firing can go missing for more reasons than an outage alone — the whole system being down is the most common cause (most often because the shared database is unreachable, which stops Scheduling entirely), but it also happens if an operator has deliberately paused that schedule, for example to protect production during an environment issue, or because they've been informed of a database or message-queue problem and are riding it out on purpose. Whatever the cause, it is handled the same way: the automatic policy is to do nothing. The missed slot is skipped entirely; the timetable simply resumes at its next natural time and produces that window normally. There is no automatic catch-up, ever, for any report.
-
-Recovering a missed slot is always a deliberate action, available for any missed slot, sub-daily or end-of-day alike. An operator (or a small admin endpoint) fires the schedule again, passing the missed slot's time, and it produces exactly the window that firing would have produced on time. This is idempotent — re-issuing a backfill for a slot that already ran simply does nothing the second time.
-
-This is also the intended shape of a deliberate pause: pause the schedule to ride out the issue, fix it, resume for firings going forward, then, once it is agreed which slots actually matter, backfill exactly those. This is the operator's main tool during a known database issue too: pause the affected schedules once informed there's a problem, resume once the database is confirmed healthy, and backfill afterward if any of the missed windows still matter.
-
-Daylight saving: a fire time that falls in the skipped spring-forward stretch shifts forward to the next real moment; one that falls in the repeated autumn stretch fires once, at its first occurrence. A rolling frequency caught in that stretch ends up with a window whose start and end resolve to the same instant — an empty report, not a wrong one.
+A missed firing is never automatically caught up, whatever the cause — an outage, or a deliberate pause. The timetable simply resumes at its next natural time; recovering a missed slot is always a deliberate Backfill. The full misfire policy, Backfill mechanics, and the Pause/Resume operational runbook for a known database or message-queue issue are documented in `commander-scheduling.md` (Sections 4 and 5).
 
 **C. Reliability behaviours worth knowing**
 
-- Overlapping firings of the same schedule are allowed on purpose. If one window's run is still going when the next window's run fires, both are allowed to proceed — a slow run must never hold back the next window's report.
-- Redeploys clean up after themselves. If a previous configuration's timetables are still registered, the application removes them at startup, before the scheduler starts running, so nothing fires against a stale schedule.
+- Scheduling places no mutual-exclusion lock between firings of the same schedule — each registered trigger fires and invokes Assembly's entry point independently of any earlier firing's status. Whether Assembly then allows two Runs for the same schedule to proceed concurrently is Assembly's own decision (see Assembly, E, below).
 - Recovery from a pod dying at any point — before or during a run — is covered in full under Assembly, D, below.
 
 ### Assembly
@@ -158,12 +142,13 @@ Every WorkItem finishes in exactly one of these states:
 
 A scheduled run: while a run is active, its pod updates a heartbeat on the Run regularly. The watchdog (1.6) is a clustered job that fires on a short interval, so only one pod's watchdog tick is ever scanning for a stale heartbeat at a time, and that same pod is the one that discovers a stale run, claims it (safely, so only one pod wins even if two ticks overlap), and resumes it immediately, in that same execution. Resuming means two things: re-fetching and rebuilding any WorkItems left unfinished (safe to redo, since the Outbox's fingerprint rule simply rejects anything already built before the crash), and continuing to page forward from wherever the dead pod left off, exactly as normal processing would. A run that keeps failing recovery past a set number of attempts is marked abandoned, with an alert for a person.
 
-A pod dying before it even manages to create the Run in the first place is a different, narrower case: Quartz's own job recovery (1.6, Scheduling) simply re-fires the trigger on a live pod, which re-enters this entry point and creates the Run normally, the same as any other attempt for a slot that doesn't have one yet.
+A pod dying before it even manages to create the Run in the first place is a different, narrower case: Quartz's own job recovery (see `commander-scheduling.md`, Logical components) simply re-fires the trigger on a live pod, which re-enters this entry point and creates the Run normally, the same as any other attempt for a slot that doesn't have one yet.
 
 An on-demand or inbound-push run: much simpler, and needs no watchdog. These arrive as queue messages, so if a pod dies before finishing one, the queue itself automatically redelivers it to another pod, which starts over. To avoid reprocessing a message that actually finished just before the crash-and-redeliver, Commander records the id of every incoming message it completes (ProcessedInboundMessage) and skips any it has already seen.
 
 **E. Reliability details worth knowing**
 
+- Assembly places no mutual-exclusion lock on Runs for the same report type and frequency. If an earlier window's Run is still in progress when the next window's trigger arrives, Assembly creates a new Run and processes it independently — a slow run must never hold back the next window's report.
 - Different trigger types are never deduplicated against each other. A scheduled run and an on-demand request can target the very same configuration and window on purpose, and both are produced and delivered — a request's fingerprint includes which trigger produced it, so the two carry different fingerprints and neither blocks nor suppresses the other.
 - Feature flags are checked at exactly two points and nowhere in between: once here, at Run creation, and once more by Delivery immediately before sending (see Delivery, below). Both checks are final. A WorkItem always ends up "built" once it exists, regardless of what Delivery later decides about actually sending it.
 - There is no ordering guarantee between published requests. Every request is self-contained, and Executor is expected to process each one independently.
