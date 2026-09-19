@@ -1,6 +1,6 @@
 # 1. Overview
 
-Corporate Reporting — the product line that delivers CAMT reports to corporate and commercial banking customers — is powered by two purpose-built applications, each owning a distinct, non-overlapping stage of the process:
+Corporate Reporting — the product offering that delivers CAMT reports to corporate banking customers — is powered by two purpose-built applications, each owning a distinct, non-overlapping stage of the process:
 
 * **Commander** owns the decision of *when* a report is due. It schedules and validates report generation, resolves the applicable report configuration for each customer, and publishes a report generation request — a structured message, not a report — onto a queue for the Executor application to process. Commander never renders or generates the report itself.
 
@@ -30,7 +30,19 @@ Commander is made up of three sub-components.
 
 ## 1.4 Architectural Decisions
 
+1. **No cross-trigger lock between a scheduled run and an on-demand request.** An earlier design had a table whose whole purpose was to make a scheduled run and an on-demand request for the same configuration take turns rather than both proceeding — the opposite of the confirmed product decision that both should always be delivered, distinguished by trigger metadata. The lock added real complexity (an expiry, a locking query, a "claim expires during recovery" edge case) for no remaining correctness benefit once both trigger types already carry distinct fingerprints, so it was dropped entirely.
+
+2. **A scheduled request's identity is derived from its scheduled fire time, not a fixed placeholder.** Earlier drafts gave every scheduled-path request the same placeholder identity, which meant a real firing and any later firing for the same window collapsed into one request — fine in production, since a given window only fires once, but it broke fast-cadence testing, where every test tick is supposed to produce a fresh request. Basing the identity on the scheduled fire time fixes this: the same slot (crash recovery, or a misfire catch-up landing on the same boundary) still produces the same identity and still deduplicates, while a genuinely distinct firing (a fast test tick, or a manual re-run with no explicit slot) produces a fresh one.
+
+3. **Spring Batch was considered and rejected.** Its step-level restart granularity, a second metadata schema alongside Commander's own tables, and event-driven triggers (scheduled, on-demand, PHT) not fitting its batch-launch model made it a worse fit than Commander's own resolve-build-outbox-done loop.
+
+4. **Recovery redoes assembly for still-incomplete work on resume, rather than checkpointing resolution separately.** Recovery already re-resolves each page's data exactly as normal processing does, so a separate resolve-checkpoint would only save re-doing assembly for items already cheaply resolved — not worth the added retention job and complexity it would require unless profiling later shows otherwise. Three independently deployed and monitored sweepers were also rejected as a recovery approach: real added operational surface with no stated need behind it.
+
 ## 1.5 Assumptions and Pre-Requisites
+
+- Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
+- Executor accepts two requests that are semantically equal — same configuration, window, and data — as long as they're distinguished by trigger metadata. A scheduled request and an on-demand request for the identical configuration and window are both valid, independent deliveries, not duplicates of each other.
+- Executor processes each request independently, with no dependence on delivery order.
 
 ## 1.6 Logical View - Architecture Scope
 
@@ -66,6 +78,13 @@ Scheduling's full architecture — startup sequence, the window-calculation func
 
 - **The drain loop** — a loop every pod runs at once, continuously draining finished requests from the outbox onto the real outbound queue. A claim on each row stops two pods sending the same one twice.
 - **Publish-failure handling** — retries with backoff and jitter; if the queue itself is unreachable, the row simply stays PENDING and is picked up again on the next pass. A request that fails specifically at delivery, rather than the queue being unreachable, is handled through dead-letter recovery.
+- **Delivery is at-least-once, not exactly-once.** A row can be sent successfully and then redelivered if the pod that sent it dies before marking it done — sending and marking done aren't one atomic step. Every request carries its own fingerprint, and Executor is expected to dedupe on it (see 1.5, Assumptions).
+
+An Outbox row ends in one of three states:
+
+- Pending — waiting to be sent, or waiting for the next retry if an earlier attempt failed to reach the queue.
+- Sent — successfully published onto the outbound queue.
+- Skipped — the report type's feature flag was off at send time; final, never sent, not retried, not alerted (above).
 
 ### Handoff boundaries
 
@@ -119,6 +138,13 @@ Inbound account balance push:
 4. It mints a fresh identity for this request, the same as on-demand.
 5. It builds one request carrying those pushed balances and writes it to the Outbox.
 6. It records the incoming message as handled and acknowledges the queue.
+
+A Run ends in one of four states:
+
+- In progress — still being worked by its owning pod.
+- Completed — every WorkItem it produced has reached a terminal state.
+- Skipped — the report type's feature flag was off at creation; final, nothing was ever built (A, above).
+- Abandoned — recovery kept failing past a set number of attempts; final, with an alert for a person (D, below).
 
 **B. The bundling rule — what "one WorkItem" means**
 

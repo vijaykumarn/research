@@ -127,18 +127,25 @@ rule).
 
 ---
 
-## 8. [ ] Pipeline-side admin surface
+## 8. [ ] Assembly/Delivery-side admin surface, and the retry/dead-letter jobs themselves
 
 **The gap:** Scheduling has a rich, well-designed admin story (Run now, Backfill, Pause, Resume,
-Status). The pipeline has none of its own — no documented way to redrive a `FAILED_POISON` item,
-inspect or cancel a stuck on-demand run, or manage the dead-letter queue, even though
-`DeadLetterRecoveryJob` is mentioned in the broader requirements.
+Status). Assembly and Delivery have none of their own — no documented way to redrive a
+`FAILED_POISON` WorkItem, inspect or cancel a stuck on-demand run, or manage the dead-letter
+queue. This is two gaps, not one: the admin *surface* (an operator's way to act on these), and
+the underlying *mechanism* itself — what job actually retries a failed publish, what job
+processes the dead-letter table, on what schedule, with what backoff — neither is designed yet,
+even though `DeadLetterRecoveryJob` is mentioned in the broader requirements as a known concept.
+Delivery's current description (`solution-document-commander.md`, 1.6/1.7) states that a
+delivery failure "is handled through dead-letter recovery" without saying what that job does.
 
-**Why it matters:** Operators will need to act on pipeline-level problems (poison items, a
-stuck run, a growing dead-letter queue) the same way they already can for schedules.
+**Why it matters:** Operators will need to act on Assembly/Delivery-level problems (poison
+items, a stuck run, a growing dead-letter queue) the same way they already can for schedules —
+and without the underlying job(s) designed, "dead-letter recovery" is currently just a name.
 
-**Affected documents:** `02-commander-message-production-pipeline.txt` (a new 1.6 component
-and/or 1.2 scope addition).
+**Affected documents:** `solution-document-commander.md`, Assembly and Delivery (1.4/1.6/1.7).
+Explicitly deferred until Assembly is further solutioned — noted 2026-09-19, not to be drafted
+prematurely.
 
 ---
 
@@ -245,6 +252,63 @@ rather than separately, since the new consolidated document is exactly where "on
 concept" becomes easy to enforce.
 
 **Affected documents:** Same as #10.
+
+---
+
+## 13. [ ] On-demand guard against a PHT-only config, unresolved
+
+**The gap:** The on-demand path accepts an explicit list of configuration ids and does not
+filter by frequency. A config marked `NEVER` (the PHT-only marker) could in principle be
+included in an on-demand request by mistake. The product owner's guarantee is that this won't
+happen — no on-demand request will ever target a PHT-only recipient — but whether Commander
+should also guard against it in code, as a safety net in case that guarantee is ever wrong, is
+still an open decision: enforce it at the source (the on-demand caller never sends one, since
+the same team builds that caller), or defend inside Commander with a skip-and-log check that
+records the skipped ids on the Run without failing the whole request.
+
+**Why it matters:** A wrong assumption here wouldn't be caught by any existing mechanism —
+Assembly has no reason to distinguish a `NEVER` config from any other on the on-demand path
+today.
+
+**Affected documents:** `solution-document-commander.md`, Assembly (1.5 Assumptions and/or 1.4
+Architectural Decisions, once that section is built).
+
+---
+
+## 14. [ ] `ProcessedInboundMessage` retention, unresolved
+
+**The gap:** How long to keep `ProcessedInboundMessage` rows isn't decided. It needs to be read
+off the actual backout/redelivery-limit configuration on the on-demand and PHT queues, not
+picked arbitrarily — a row swept before that window closes means a legitimate late redelivery
+gets treated as new and reprocessed.
+
+**Why it matters:** Too short a retention silently reopens the exact duplicate-processing risk
+`ProcessedInboundMessage` exists to close; too long wastes storage for no benefit.
+
+**Affected documents:** `solution-document-commander.md`, Assembly (1.5 Assumptions).
+
+---
+
+## 15. [ ] The watchdog job's own operational detail is unspecified
+
+**The gap:** The watchdog's *behavior* is documented (1.6/1.7, Assembly) — what it does once it
+finds a stale run — but not its own operational specifics: how often it actually polls, what
+counts as "stale" (the heartbeat-timeout threshold), and whether either is configurable. Also
+missing: the source material describes a **second, separate job** for on-demand/PHT Runs — a
+low-frequency job that marks long-stale non-scheduled Runs `ABANDONED` for audit hygiene only,
+explicitly *not* attempting recovery (since on-demand/PHT already recover via queue redelivery,
+per 1.7 D). That second job isn't mentioned anywhere in the current document at all. Finally,
+there's no admin surface for the watchdog itself — no way to check its health, see how many
+runs currently look stale, or manually trigger a pass.
+
+**Why it matters:** Same shape as #8 — a job that's named and partially behaviorally specified,
+but not fully designed. An operator has no visibility into whether the watchdog is healthy, and
+the separate on-demand/PHT audit-hygiene job doesn't exist in the document at all yet, even
+though it's a real, distinct piece of the recovery story.
+
+**Affected documents:** `solution-document-commander.md`, Assembly (1.4 Architectural Decisions
+and/or 1.6 Logical View, once revisited). Explicitly deferred until Assembly is further
+solutioned — noted 2026-09-19, not to be drafted prematurely.
 
 ---
 
