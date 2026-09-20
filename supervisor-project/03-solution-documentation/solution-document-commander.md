@@ -84,7 +84,7 @@ An Outbox row ends in one of three states:
 
 - Pending — waiting to be sent, or waiting for the next retry if an earlier attempt failed to reach the queue.
 - Sent — successfully published onto the outbound queue.
-- Skipped — the report type's feature flag was off at send time; final, never sent, not retried, not alerted (above).
+- Skipped — the report type's feature flag was off at send time (see 1.7, Delivery).
 
 ### Handoff boundaries
 
@@ -113,6 +113,27 @@ A missed firing is never automatically caught up, whatever the cause — an outa
 ### Assembly
 
 **A. The three ways a run starts**
+
+```mermaid
+flowchart LR
+    subgraph Scheduled
+        S1(["Trigger fires"]) --> S2[Resolve window]
+    end
+    subgraph On-demand
+        O1[/Queue message/] --> O2[Mint identity]
+    end
+    subgraph Inbound push
+        P1[/Balance push/] --> P2[Look up recipient config] --> P3[Mint identity]
+    end
+
+    S2 --> CR[Create Run]
+    O2 --> CR
+    P3 --> CR
+
+    CR --> FLAG{Feature flag on?}
+    FLAG -- No --> SKIP(["Run skipped — final"])
+    FLAG -- Yes --> PAGE["Page through configs,<br/>build requests, write to Outbox"]
+```
 
 Scheduled:
 
@@ -143,7 +164,7 @@ A Run ends in one of four states:
 
 - In progress — still being worked by its owning pod.
 - Completed — every WorkItem it produced has reached a terminal state.
-- Skipped — the report type's feature flag was off at creation; final, nothing was ever built (A, above).
+- Skipped — the report type's feature flag was off at creation (1.6, Assembly, above).
 - Abandoned — recovery kept failing past a set number of attempts; final, with an alert for a person (D, below).
 
 **B. The bundling rule — what "one WorkItem" means**
@@ -158,6 +179,18 @@ The WorkItem rows are written to match this exactly, which is also why they can 
 
 **C. How a WorkItem ends**
 
+```mermaid
+stateDiagram-v2
+    [*] --> Pending
+    state "Failed (poison)" as FailedPoison
+    Pending --> Built: request written to Outbox
+    Pending --> FailedPoison: retries exhausted, alerted
+    Pending --> Obsolete: scope confirmed gone, not alerted
+    Built --> [*]
+    FailedPoison --> [*]
+    Obsolete --> [*]
+```
+
 Every WorkItem finishes in exactly one of these states:
 
 - Built — its request is in the Outbox. This means produced, not delivered; what happens to it after is covered under Delivery, below.
@@ -165,6 +198,22 @@ Every WorkItem finishes in exactly one of these states:
 - Obsolete — during recovery, the account or scope this item was for turned out to have been genuinely removed, confirmed by an actual lookup rather than one that merely failed or timed out. Logged, done, not an alert. A lookup that only failed or timed out is treated as an ordinary failure and retried instead — a temporary hiccup must never quietly retire real work.
 
 **D. When a pod dies**
+
+```mermaid
+flowchart TD
+    DIE[Pod dies mid-firing] --> Q{When did it die?}
+
+    Q -- Before Run created --> QR["Quartz's own job recovery<br/>(commander-scheduling.md)"]
+    QR --> REFIRE[Re-fires trigger on a live pod] --> ENTRY[Re-enters this entry point,<br/>creates Run normally]
+
+    Q -- "After Run created<br/>(scheduled path)" --> WD[Watchdog]
+    WD --> STALE[Notices stale heartbeat,<br/>claims Run via CAS]
+    STALE --> RESUME[Rebuilds unfinished WorkItems,<br/>pages forward from checkpoint]
+
+    Q -- On-demand or<br/>inbound-push --> QD[Queue redelivery]
+    QD --> RETRY[Another pod picks up<br/>the redelivered message]
+    RETRY --> DEDUP["Skips if already in<br/>ProcessedInboundMessage"]
+```
 
 A scheduled run: while a run is active, its pod updates a heartbeat on the Run regularly. The watchdog (1.6) is a clustered job that fires on a short interval, so only one pod's watchdog tick is ever scanning for a stale heartbeat at a time, and that same pod is the one that discovers a stale run, claims it (safely, so only one pod wins even if two ticks overlap), and resumes it immediately, in that same execution. Resuming means two things: re-fetching and rebuilding any WorkItems left unfinished (safe to redo, since the Outbox's fingerprint rule simply rejects anything already built before the crash), and continuing to page forward from wherever the dead pod left off, exactly as normal processing would. A run that keeps failing recovery past a set number of attempts is marked abandoned, with an alert for a person.
 
@@ -184,6 +233,16 @@ An on-demand or inbound-push run: much simpler, and needs no watchdog. These arr
 
 ### Delivery
 
+```mermaid
+flowchart LR
+    ROW[("Outbox row:<br/>Pending")] --> FLAG{Feature flag<br/>on?}
+    FLAG -- No --> SKIP(["Skipped — final"])
+    FLAG -- Yes --> SEND[Attempt to send]
+    SEND -- Success --> SENT(["Sent"])
+    SEND -- Queue unreachable --> ROW
+    SEND -- Specific failure --> DL[Dead-letter recovery]
+```
+
 - The drain loop continuously drains finished requests from the Outbox onto the real outbound queue, retrying failed publish attempts with backoff and jitter.
 - Immediately before sending a given row, it checks that report type's feature flag one final time; if off, the row is marked done without being sent, final, not retried, not alerted (see Assembly, E, above, for the full two-check story).
 - If the queue itself is unreachable, the outbox row simply stays PENDING; the next pass picks it up again once the queue is reachable. Nothing is lost and nothing needs to be specially detected.
@@ -200,3 +259,11 @@ An on-demand or inbound-push run: much simpler, and needs no watchdog. These arr
 ## 1.x \<Relevant name\>
 
 # 2. Implementation Reference
+
+<!-- Open item (noted 2026-09-19): add the DB model here once this section is built —
+     a Mermaid erDiagram for the visual (Run, WorkItem, Outbox, ProcessedInboundMessage
+     and their relationships) plus the actual CREATE TABLE SQL as reference text.
+     Not raw DBML — Confluence renders Mermaid natively, not DBML; DBML by itself needs
+     an external tool (e.g. dbdiagram.io) to become a picture. Source: schema.dbml /
+     solution_v08.md in 02-design/message-pipeline/. -->
+
