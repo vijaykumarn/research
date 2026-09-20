@@ -36,7 +36,13 @@ Decisions — needs its own explicit decision; currently assumed away).
 
 ---
 
-## 2. [ ] Observability / correlation-ID propagation
+## 2. [x] Observability / correlation-ID propagation — RESOLVED 2026-09-20
+
+**Resolution:** Added as `solution-document-commander.md`, 1.4 Architectural Decisions, decision
+6 — a Run's identifier threads through every log line for that run, and each request's own
+identity threads through the request payload itself, giving Executor the same identity to trace
+by. Cross-linked from 1.6 Assembly's Outbox bullet, where that identity (the fingerprint) is
+defined.
 
 **The gap:** Zero mentions of structured logging, metrics, or a shared identifier across either
 document. There's no documented way to trace one report end-to-end through scheduling → the
