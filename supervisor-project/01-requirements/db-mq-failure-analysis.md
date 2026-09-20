@@ -112,16 +112,20 @@ pause on-demand/PHT intake too during a known incident?
 
 ## Where this lands in the solution documents
 
-- `03-solution/01-commander-scheduling.txt` (scheduling): scenario (a) and the Quartz/SQL Server
-  dependency are now an explicit bullet in 1.5 (Assumptions); recommendation 2 extends decision
-  2 in 1.4 (Architectural Decisions); the Pause/Resume connection from recommendation 6 is now
-  in 1.7.B (Workflow, "When a firing is missed").
-- `03-solution/02-commander-message-production-pipeline.txt` (message pipeline): scenario (c)
-  is now an explicit bullet in 1.5; recommendations 1, 12 (jitter), and 13 (outbox-stays-pending)
-  are new decisions 11-13 in 1.4; recommendation 4 (heartbeat reassurance) and the open item
-  (Pause/Resume's scheduled-only scope) are new bullets in 1.7.E ("Reliability details worth
-  knowing").
-- `03-solution/03-commander-data-retrieval.txt` (data retrieval): not yet drafted. This concern
-  — and specifically the tri-state's role in recommendation 1 — must be carried into that
-  document's own Section 1 when it is written; data-retrieval already has the structural hook
-  for it (the `query-failed` outcome).
+**Status 2026-09-21: fully covered**, after the original `01-commander-scheduling.txt` /
+`02-commander-message-production-pipeline.txt` were superseded by the current documents, and a
+gap this introduced was caught and closed.
+
+- `commander-scheduling.md`: scenario (a) and the Quartz/SQL Server dependency are an explicit
+  bullet in Section 6 (Assumptions) — this was dropped when the document was rebuilt fresh from
+  the original design source material (which predates this analysis), then re-added. Recommendation
+  6 (Pause/Resume tied to "informed of a DB or MQ issue") is in Section 5, B (Admin actions).
+- `solution-document-commander.md` (Assembly/Delivery): scenario (c) is implicit in the
+  WorkItem retry/Failed-poison path (1.7, C). Recommendation 1 (infra-vs-data classification +
+  aggregate alert) is 1.4, decision 13. Recommendation 3 (outbox-stays-pending when MQ is
+  unreachable) is in 1.6/1.7, Delivery. Recommendation 4 (heartbeat reassurance) and the open
+  item (Pause/Resume's scheduled-only scope) are bullets in 1.7, Assembly E. Recommendation 5
+  (backoff-with-jitter) covers both MQ retries (1.6/1.7, Delivery) and DB retries (1.4, decision
+  14, added specifically to close a gap where only the MQ side had been stated).
+- `commander-data-retrieval.md`: exists now. Recommendation 1's structural hook (the tri-state —
+  found / confirmed-absent / query-failed) is documented in Section 2 and Section 7.6.

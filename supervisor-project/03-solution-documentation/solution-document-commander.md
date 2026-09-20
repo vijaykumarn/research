@@ -54,6 +54,10 @@ Commander is made up of three sub-components.
 
 12. **`ProcessedInboundMessage` rows are retained for 24 hours.** This needs to exceed the worst-case time a legitimate redelivery could still arrive — a row purged before that window closes would be treated as a new message and reprocessed, silently reopening the exact duplicate-processing risk this table exists to close. 24 hours is a provisional estimate (up to 5 redelivery attempts, each potentially requiring a replacement pod to reconnect, at roughly 5-10 minutes per restart) pending confirmation against the actual backout-threshold and redelivery configuration on the on-demand and PHT queues, and should be revisited once that's known.
 
+13. **A failure is classified as infrastructure or data at the point it's logged, and a spike of infrastructure-classified failures raises its own, separate, aggregate alert.** Data Retrieval's tri-state resolution already gives this distinction for free — a query that failed or timed out is a different outcome from one that confirmed the data is genuinely gone (`commander-data-retrieval.md`). Using that distinction to drive a systemic-looking alert, rather than letting a database problem surface only as many individual Failed-poison items (1.7, C), is what lets an operator recognize a database issue quickly enough to pause the affected schedules, rather than mistaking a systemic problem for a pile of unrelated bad data.
+
+14. **Retries into the shared database use backoff with jitter, the same as Delivery's publish retries (1.6, Delivery), not a fixed interval.** This applies everywhere Commander retries against the database under load — WorkItem retries toward Failed-poison, and Data Retrieval's own query retries — not just at publish time. A fixed retry interval, repeated by every pod at once, risks turning a database that's just starting to recover back into a struggling one; spreading retries out avoids adding a synchronized load spike on top of a dependency that's already recovering.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
@@ -211,7 +215,7 @@ stateDiagram-v2
 Every WorkItem finishes in exactly one of these states:
 
 - Built — its request is in the Outbox. This means produced, not delivered; what happens to it after is covered under Delivery, below.
-- Failed (poison) — tried several times and keeps failing, usually because of bad data, or fails immediately because the built request exceeds the message-size ceiling (1.4, decision 7). Final, and it raises an alert; the rest of the run carries on regardless.
+- Failed (poison) — tried several times, with backoff and jitter between attempts (1.4, decision 14), and keeps failing, usually because of bad data, or fails immediately because the built request exceeds the message-size ceiling (1.4, decision 7). Final, and it raises an alert — individually, and as part of the aggregate infrastructure-failure signal if the underlying cause is classified as infrastructure rather than data (1.4, decision 13); the rest of the run carries on regardless.
 - Obsolete — during recovery, the account or scope this item was for turned out to have been genuinely removed, confirmed by an actual lookup rather than one that merely failed or timed out — Data Retrieval's recovery entry point (`commander-data-retrieval.md`) is what makes that distinction. Logged, done, not an alert. A lookup that only failed or timed out is treated as an ordinary failure and retried instead — a temporary hiccup must never quietly retire real work.
 
 **D. When a pod dies**

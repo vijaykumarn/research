@@ -141,6 +141,7 @@ Misfire policy: a firing that is missed, whether from an outage or a deliberate 
 ## 6. Assumptions
 
 - The business day is Monday to Friday. There is no holiday calendar — a weekday holiday still runs its scheduled firings and produces a (possibly near-empty) report.
+- Quartz's own job store — the thing that lets it know what's due and coordinate which pod picks up a firing — lives in the same shared database as the rest of the deployment. If that database is unreachable, Quartz cannot determine what's due or coordinate anything, so Scheduling stops entirely: nothing fires at all until the database is reachable again. This is an inherent consequence, not a gap Scheduling can resilience around — but it does mean a database outage needs its own infrastructure-level alerting, since Scheduling's own alerting depends on Scheduling being able to run in the first place. A database outage is the single most likely real-world cause of "the whole cluster is down"; it's handled the same way as any other outage — nothing is caught up automatically, and recovering whichever slots actually matter is a deliberate Backfill once the database is healthy again (5, B).
 
 ## 7. Implementation Reference
 
