@@ -130,9 +130,35 @@ rather than draining cleanly on `SIGTERM`.
 happen constantly; crashes should be rare. Worth an explicit decision either way rather than
 defaulting into "every deploy looks like an incident."
 
-**Affected documents:** `02-commander-message-production-pipeline.txt` (1.4, as a new decision
-or an explicit note on the existing crash-handling decisions); possibly
-`01-commander-scheduling.txt` too, for Quartz's own shutdown behaviour.
+**Affected documents:** `solution-document-commander.md` (1.4, as a new decision or an explicit
+note on the existing crash-handling decisions); possibly `commander-scheduling.md` too, for
+Quartz's own shutdown behaviour.
+
+**Status 2026-09-20 — discussed, not yet drafted, revisit later:** User has already added a
+Spring Boot `server.shutdown=graceful` property, and Kubernetes deployments are confirmed
+rolling. Important nuance raised: that property only covers the embedded web server (stops
+accepting new HTTP requests, waits for in-flight ones) — most of what actually needs draining
+here isn't HTTP-triggered, so real work remains beyond that one property:
+
+1. **Delivery's drain loop** — a continuous background loop, not HTTP-triggered. Needs its own
+   shutdown hook: stop claiming new Outbox rows, finish sending whatever's already claimed, then
+   exit. The graceful-shutdown property does nothing for this on its own.
+2. **On-demand/PHT JMS listener containers** — their own separate shutdown lifecycle from the
+   HTTP server. Need explicit configuration to stop accepting new messages but let the one
+   currently being processed finish (pairs with decision 5's manual-ack requirement).
+3. **Quartz's own shutdown setting** (`waitForJobsToCompleteOnShutdown`) — entirely separate
+   from Spring's HTTP graceful shutdown. Without it, a scheduled Run mid-page (or the watchdog
+   mid-tick) can be interrupted abruptly regardless of the web-server setting.
+4. **`terminationGracePeriodSeconds` on the Kubernetes deployment** — needs to be long enough
+   to cover the worst realistic case (finishing a page of ~500 configs, or an in-flight
+   publish). Too short, and Kubernetes sends `SIGKILL` before any of the above finishes anyway.
+   Not yet confirmed whether this is set explicitly or left at the Kubernetes default (30s).
+5. **Stop claiming *new* work the moment shutdown starts, not just at the end of the grace
+   period** — a pod already shutting down shouldn't pick up a new scheduled firing, on-demand
+   message, or Outbox row to send, even in the seconds before it exits.
+
+Revisit and draft into 1.4 once ready, most likely as its own decision covering all five points
+(or a subset, if some are already handled by infrastructure config not reflected here).
 
 ---
 
