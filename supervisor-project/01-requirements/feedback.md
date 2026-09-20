@@ -444,6 +444,44 @@ shape here now, before Executor's own contract gets built against something undo
 
 ---
 
+## 17. [ ] `ReportFrequency` code mismatch against the real schema, plus a possibly-missing constraint
+
+**The gap:** Reading the real, pre-existing database init scripts
+(`/home/vikunalabs/workspace/codespace/bikili/infra/docker/init-scripts/db/01-schema-reference.sql`
+through `05-schema-report.sql`) surfaced a genuine mismatch against what's already documented.
+The real `CAMT.ReportFrequency` seed data is: `EVERY_30_MIN`, `EVERY_1_HOUR`, `EVERY_2_HOURS`,
+`EVERY_4_HOURS`, `DAILY`, `ONE_TIME_PER_DAY`, `FOUR_TIMES_PER_DAY`, `EIGHT_TIMES_PER_DAY`.
+`commander-scheduling.md`'s Frequency catalogue instead uses `END_OF_DAY` (no `DAILY`
+counterpart existed in the real data) and `NEVER` (the PHT-only marker — also absent from the
+real seed data), and spells the once-a-day case `ONCE_PER_DAY` rather than the real
+`ONE_TIME_PER_DAY`.
+
+**Decided 2026-09-20:** `DAILY` = `END_OF_DAY` (the same concept, real code differs from ours —
+`DAILY` is the value to use going forward). `NEVER` is a genuinely new value, not yet present in
+the real schema, and needs to be added. `ONE_TIME_PER_DAY` vs. `ONCE_PER_DAY` still needs a
+call — which spelling is authoritative.
+
+**Also needed:** check whether any existing constraint on `CAMT.ReportConfig` or
+`CAMT.ReportFrequency` needs adding or updating once `NEVER` is introduced as a real value —
+not yet investigated. Candidates to check: whether `NEVER`-frequency configs need any special
+handling beyond the structural exclusion already described (the scheduled path's own
+`ReportType = ? AND ReportFrequency = ?` predicate never equals `NEVER`, per `goal.md`), and
+whether `UX_ReportConfig_RecipientReportType UNIQUE (MessageRecipientId, ReportType)` has any
+interaction with a recipient needing both a scheduled config and a `NEVER`/PHT config for
+related report types.
+
+**Why it matters:** `commander-scheduling.md`'s entire Frequency catalogue, generated-cron
+table, and window-function examples are built around the code names currently in that document.
+If the real schema's names differ, either the document or the schema (or both, via a migration)
+needs to change before either is treated as final.
+
+**Affected documents:** `commander-scheduling.md` (Frequency catalogue, 7.1 configuration
+examples, 7.2 generated-cron table), `commander-data-retrieval.md` (wherever `ReportFrequency`
+values are referenced). A new section covering the real schema will be added to the solution
+documentation, but only after the user's own review — not drafted yet.
+
+---
+
 ## Priority order (suggested)
 
 1. JMS acknowledgment mode (correctness-critical, top priority)
