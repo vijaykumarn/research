@@ -38,6 +38,8 @@ Commander is made up of three sub-components.
 
 4. **Recovery redoes assembly for still-incomplete work on resume, rather than checkpointing resolution separately.** Recovery already re-resolves each page's data exactly as normal processing does, so a separate resolve-checkpoint would only save re-doing assembly for items already cheaply resolved — not worth the added retention job and complexity it would require unless profiling later shows otherwise. Three independently deployed and monitored sweepers were also rejected as a recovery approach: real added operational surface with no stated need behind it.
 
+5. **On-demand and inbound-push queue consumers use manual (client) acknowledgment, never a framework's default auto-acknowledge.** The crash-recovery story for these two paths depends entirely on it: a message is only acknowledged — and therefore only removed from the queue — after its Run has been durably recorded. Under auto-acknowledge, the message is removed the instant it's delivered, before processing even starts; a crash right after delivery would lose it silently, with nothing left for the queue to redeliver. This must be an explicit consumer configuration, not left to a default.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
@@ -219,7 +221,7 @@ A scheduled run: while a run is active, its pod updates a heartbeat on the Run r
 
 A pod dying before it even manages to create the Run in the first place is a different, narrower case: Quartz's own job recovery (see `commander-scheduling.md`, Logical components) simply re-fires the trigger on a live pod, which re-enters this entry point and creates the Run normally, the same as any other attempt for a slot that doesn't have one yet.
 
-An on-demand or inbound-push run: much simpler, and needs no watchdog. These arrive as queue messages, so if a pod dies before finishing one, the queue itself automatically redelivers it to another pod, which starts over. To avoid reprocessing a message that actually finished just before the crash-and-redeliver, Commander records the id of every incoming message it completes (ProcessedInboundMessage) and skips any it has already seen.
+An on-demand or inbound-push run: much simpler, and needs no watchdog. These arrive as queue messages, so if a pod dies before finishing one, the queue itself automatically redelivers it to another pod, which starts over — a guarantee that depends on manual acknowledgment (1.4, decision 5): the message stays unacknowledged, and therefore eligible for redelivery, until its work is durably recorded. To avoid reprocessing a message that actually finished just before the crash-and-redeliver, Commander records the id of every incoming message it completes (ProcessedInboundMessage) and skips any it has already seen.
 
 **E. Reliability details worth knowing**
 

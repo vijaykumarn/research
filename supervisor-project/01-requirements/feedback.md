@@ -12,7 +12,12 @@ document/section it landed in.*
 
 ---
 
-## 1. [ ] JMS acknowledgment mode — top priority, correctness-critical
+## 1. [x] JMS acknowledgment mode — top priority, correctness-critical — RESOLVED 2026-09-20
+
+**Resolution:** Added as `solution-document-commander.md`, 1.4 Architectural Decisions, decision
+5 — on-demand and inbound-push consumers use manual (client) acknowledgment, never a framework
+default, explicitly because the redelivery-based crash-recovery claim depends on it. Cross-linked
+from 1.7 Assembly D, where that redelivery claim is made.
 
 **The gap:** Both documents state that "the queue itself automatically redelivers the message
 to another pod" as the safety story for on-demand and PHT recovery — no watchdog needed, MQ
@@ -162,7 +167,13 @@ drafted — flag it there rather than treating it as a gap in the two existing d
 
 ---
 
-## 10. [ ] The scheduling/pipeline boundary is misdrawn
+## 10. [x] The scheduling/pipeline boundary is misdrawn — RESOLVED 2026-09-20
+
+**Resolution:** Resolved by construction in `solution-document-commander.md`. Scheduling's 1.7 A
+now does only two things — pick up the clustered firing, invoke Assembly's scheduled entry
+point — and stops. Assembly's own 1.7 A owns the full resolve-window → create-Run → check-flag
+sequence, exactly per the "Resolution direction agreed" below. The two documents no longer
+describe the same event from two owners.
 
 **The gap:** "Set up Scheduling" was meant to mean the timing *infrastructure*: read and
 validate Quartz configuration, build and register Job/Trigger definitions, clean up orphaned
@@ -201,7 +212,10 @@ this changes what each document claims ownership of, not merely how it's phrased
 
 ---
 
-## 11. [ ] Direct contradiction: who creates the Run, and when, relative to the handoff
+## 11. [x] Direct contradiction: who creates the Run, and when, relative to the handoff — RESOLVED 2026-09-20
+
+**Resolution:** Falls out of #10's fix. Only Assembly's 1.7 A claims Run creation now
+("It creates a Run as its first durable action"); Scheduling's 1.7 A makes no competing claim.
 
 **The gap:** This is a concrete symptom of #10, worth calling out on its own because it isn't
 just duplicated documentation — the two documents actually disagree.
@@ -226,7 +240,17 @@ need to change, not the pipeline's.
 
 ---
 
-## 12. [ ] Terminology inconsistency across the two documents
+## 12. [x] Terminology inconsistency across the two documents — RESOLVED 2026-09-20
+
+**Resolution:** All three sub-items resolved in `solution-document-commander.md`. (a) "The
+watchdog" is now the sole name used throughout. (b) "Run" is the consistent name in mechanics
+sections (1.6/1.7); 1.1 deliberately uses the generic "tracking record" instead — not a relapse,
+but the intentional split between generic conceptual language and named mechanics established
+elsewhere in this project. (c) The ambiguous "concurrent"/"overlapping" wording is gone from both
+spots that used to collide — Scheduling's 1.7 C now says "no mutual-exclusion lock between
+firings"; Assembly's 1.7 E now says "no mutual-exclusion lock on Runs for the same report type
+and frequency" and "target the very same configuration and window on purpose" — distinct wording
+for the two distinct concepts.
 
 **The gap:** Three separate cases of the same thing being named or emphasized differently
 depending on which document you're reading:
