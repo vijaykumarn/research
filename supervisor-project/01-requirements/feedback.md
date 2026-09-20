@@ -122,7 +122,16 @@ or an explicit note on the existing crash-handling decisions); possibly
 
 ---
 
-## 7. [ ] Sizing / throughput bounds
+## 7. [x] Sizing / throughput bounds — RESOLVED 2026-09-20 (message-size ceiling; throughput bounds not addressed)
+
+**Resolution:** Added as `solution-document-commander.md`, 1.4 Architectural Decisions, decision
+7 — IBM MQ's 100MB message-size limit applies specifically to Bundled requests (the one shape
+with no upper bound on what it merges); a request that would exceed it fails immediately as
+poison rather than being sent, alerting an operator, since the size is deterministic and retrying
+wouldn't help. Cross-linked from the bundling rule (1.7 B) and the WorkItem Failed-poison state
+(1.7 C). Note: this closes the message-size half of the gap; a throughput *target* (messages/sec,
+pods needed) is still not addressed anywhere — that's closer to a capacity-planning /
+performance-testing input than a design decision, and is being left open rather than guessed at.
 
 **The gap:** No message-size ceiling, no bundle-size ceiling, no throughput target anywhere.
 IBM MQ has a real message-size limit (100MB, per the earlier requirements review), but nothing

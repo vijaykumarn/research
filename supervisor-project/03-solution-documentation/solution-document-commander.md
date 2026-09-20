@@ -42,6 +42,8 @@ Commander is made up of three sub-components.
 
 6. **A Run's identifier is threaded through every log line it produces, and each request's own identity is threaded through the request payload itself.** From the moment a Run is created (or an on-demand/inbound-push identity is minted) through building requests, publishing, and any recovery activity, every log statement carries that Run's identifier — one correlation id for tracing all the activity behind a single triggered run. Independently, each request's own identity — the same fields that make up its fingerprint — is embedded in the request payload Executor receives, so a single request's journey can be traced end-to-end from Commander's own logs through to Executor's processing, using the identity Commander already assigned it. Without this, tracing one report end-to-end has no shared thread to follow.
 
+7. **A request-size ceiling, tied to IBM MQ's message-size limit (100MB), applies to the bundling rule.** A Bundled configuration merges every payment type and every account or alias into one request, which — for an unusually large configuration — could in principle exceed that limit; Unbundled and Configuration-only requests are structurally bounded and never at risk. If a built request would exceed the ceiling, its WorkItem fails immediately as poison (1.7, C) rather than being sent: the size is a deterministic property of that configuration's own data, so retrying changes nothing. This surfaces as an alert an operator can act on — most naturally by reconfiguring that customer as Unbundled instead.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
@@ -179,7 +181,7 @@ A single configuration can turn into one request or many, depending on how it's 
 - Unbundled — one request per account or alias.
 - Configuration-only — one request covering just the configuration itself, with no scope attached.
 
-The WorkItem rows are written to match this exactly, which is also why they can only be written after a configuration's data has been retrieved — there's no way to know how many requests a configuration produces before then.
+The WorkItem rows are written to match this exactly, which is also why they can only be written after a configuration's data has been retrieved — there's no way to know how many requests a configuration produces before then. A Bundled request has no upper bound on how much it merges together, which is why it's the one shape subject to the message-size ceiling (1.4, decision 7).
 
 **C. How a WorkItem ends**
 
@@ -198,7 +200,7 @@ stateDiagram-v2
 Every WorkItem finishes in exactly one of these states:
 
 - Built — its request is in the Outbox. This means produced, not delivered; what happens to it after is covered under Delivery, below.
-- Failed (poison) — tried several times and keeps failing, usually because of bad data. Final, and it raises an alert; the rest of the run carries on regardless.
+- Failed (poison) — tried several times and keeps failing, usually because of bad data, or fails immediately because the built request exceeds the message-size ceiling (1.4, decision 7). Final, and it raises an alert; the rest of the run carries on regardless.
 - Obsolete — during recovery, the account or scope this item was for turned out to have been genuinely removed, confirmed by an actual lookup rather than one that merely failed or timed out. Logged, done, not an alert. A lookup that only failed or timed out is treated as an ordinary failure and retried instead — a temporary hiccup must never quietly retire real work.
 
 **D. When a pod dies**
