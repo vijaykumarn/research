@@ -351,6 +351,42 @@ solutioned — noted 2026-09-19, not to be drafted prematurely.
 
 ---
 
+## 16. [ ] ReportMessage structure suggestion
+
+**The gap:** Distinct from #5 (which is about the *evolution strategy* — how the schema changes
+safely over time), this is about the payload's actual *structure* — which has never been
+proposed anywhere. The source material and 1.5 Assumptions only establish the identity/dedup
+fields (`triggerType`, `configId`, `reportType`, `scopeKey`, `windowStart`, `windowEnd`,
+`executionId`). Nothing addresses the data payload itself: what a Bundled request's merged
+payment-type data looks like, what an Unbundled request's single-account payload looks like, or
+whether CAMT.052 / CAMT.053 / CAMT.054 need different payload shapes given they carry
+meaningfully different data (intraday balances, end-of-day statement data, debit/credit
+notification data).
+
+**Suggested starting structure** (for discussion, not yet a decision):
+
+- **Envelope** — present on every request regardless of report type or bundling shape: the
+  identity fields already established in 1.5 Assumptions (`triggerType`, `configId`,
+  `reportType`, `scopeKey`, `windowStart`, `windowEnd`, `executionId`).
+- **Body**, shaped by the bundling rule (1.7 B):
+  - Bundled — a list of payment-type allocations, each carrying that type's accounts/aliases
+    merged across every scope.
+  - Unbundled — the single account or alias's own data.
+  - Configuration-only — no scope-level data at all; just the configuration's own metadata.
+- **Report-type-specific fields** — CAMT.052, CAMT.053, and CAMT.054 don't carry the same data
+  (intraday balances vs. end-of-day statement data vs. debit/credit notification data), so the
+  body likely needs a report-type-specific section rather than one shape fitting all three.
+
+**Why it matters:** Executor needs a real payload contract to build against, not just the
+identity fields used for dedup. Left unstated, whoever implements this first ends up choosing
+the schema by accident rather than by decision.
+
+**Affected documents:** `solution-document-commander.md`, most naturally landing once Section 2
+(Implementation Reference) defines the actual message schema — but worth capturing the proposed
+shape here now, before Executor's own contract gets built against something undocumented.
+
+---
+
 ## Priority order (suggested)
 
 1. JMS acknowledgment mode (correctness-critical, top priority)
