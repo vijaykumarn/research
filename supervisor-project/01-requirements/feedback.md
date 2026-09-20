@@ -95,7 +95,14 @@ on MQ).
 
 ---
 
-## 5. [ ] Message contract / schema-evolution strategy
+## 5. [x] Message contract / schema-evolution strategy — RESOLVED 2026-09-20
+
+**Resolution:** Added as `solution-document-commander.md`, 1.4 Architectural Decisions,
+decisions 9 and 10. Decision 9 is the direct fix for the legacy incident: the payload is built
+from its own dedicated structure, never a domain object reused elsewhere. Decision 10 sets the
+ongoing evolution policy: additive-only fields, Executor ignores unrecognized ones, and a
+genuinely breaking change becomes a new report type rather than an in-place restructure. See
+also #16 (`ReportMessage` structure suggestion) for the proposed payload shape itself.
 
 **The gap:** No documented approach for how the `ReportMessage` payload gets versioned safely as
 fields are added later.

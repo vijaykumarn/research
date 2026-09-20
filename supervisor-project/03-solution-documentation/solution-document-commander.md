@@ -46,6 +46,10 @@ Commander is made up of three sub-components.
 
 8. **Run and WorkItem rows are retained for 90 days after reaching a terminal state, except Abandoned Runs and Failed-poison WorkItems, retained for 1 year to support incident investigation. Outbox rows are retained for 1 year regardless of outcome, since they're the closest thing Commander keeps to an actual delivery record.** No regulatory retention requirement applies to this data; these are operational defaults, not compliance minimums, and can be revisited if either changes.
 
+9. **The request payload is built from its own dedicated structure, never a domain object reused elsewhere in the codebase.** A legacy incident broke Executor's deserialization when a shared domain class picked up new helper methods added for an unrelated reason, and the serializer picked those up automatically as if they were new fields — nobody intended to change the message, it changed as a side effect of touching something else. A dedicated, single-purpose structure for the payload closes this off entirely: nothing else in the codebase touches it, so nothing else can accidentally reshape it.
+
+10. **New fields are additive-only; Executor ignores fields it doesn't recognize rather than failing on them.** Existing fields are never renamed or removed. This lets Commander add new information to the payload at any time without requiring a simultaneous Executor deploy — Executor keeps working unaffected until it's updated to actually use the new field. A genuinely breaking change (removing or restructuring an existing field) is handled as a new report type, not an in-place change to an existing one — kept rare by design, not the normal evolution path.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
