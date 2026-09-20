@@ -63,6 +63,7 @@ Commander is made up of three sub-components.
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
 - Executor accepts two requests that are semantically equal — same configuration, window, and data — as long as they're distinguished by trigger metadata. A scheduled request and an on-demand request for the identical configuration and window are both valid, independent deliveries, not duplicates of each other.
 - Executor processes each request independently, with no dependence on delivery order.
+- A one-off, transient failure against the shared database or queue (a dropped connection, a single query timing out) is expected and already handled by the ordinary retry path (WorkItem's attempt-count mechanism, and Data Retrieval's tri-state resolution — 1.4, decisions 13 and 14). A sustained outage of either is a different situation entirely, and needs no new machinery: if the database is genuinely unreachable, Scheduling itself cannot fire anything, so Assembly has nothing to process in the first place; if the queue is genuinely unreachable, work keeps being produced and sits safely in the outbox (1.6, Delivery) until it returns.
 
 ## 1.6 Logical View - Architecture Scope
 
