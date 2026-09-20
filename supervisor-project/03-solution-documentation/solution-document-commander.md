@@ -44,6 +44,8 @@ Commander is made up of three sub-components.
 
 7. **A request-size ceiling, tied to IBM MQ's message-size limit (100MB), applies to the bundling rule.** A Bundled configuration merges every payment type and every account or alias into one request, which — for an unusually large configuration — could in principle exceed that limit; Unbundled and Configuration-only requests are structurally bounded and never at risk. If a built request would exceed the ceiling, its WorkItem fails immediately as poison (1.7, C) rather than being sent: the size is a deterministic property of that configuration's own data, so retrying changes nothing. This surfaces as an alert an operator can act on — most naturally by reconfiguring that customer as Unbundled instead.
 
+8. **Run and WorkItem rows are retained for 90 days after reaching a terminal state, except Abandoned Runs and Failed-poison WorkItems, retained for 1 year to support incident investigation. Outbox rows are retained for 1 year regardless of outcome, since they're the closest thing Commander keeps to an actual delivery record.** No regulatory retention requirement applies to this data; these are operational defaults, not compliance minimums, and can be revisited if either changes.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).

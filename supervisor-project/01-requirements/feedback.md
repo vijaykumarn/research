@@ -57,7 +57,14 @@ the pipeline document (which already owns `execution_id`) is the natural anchor 
 
 ---
 
-## 3. [ ] Retention / archival policy
+## 3. [x] Retention / archival policy — RESOLVED 2026-09-20
+
+**Resolution:** Added as `solution-document-commander.md`, 1.4 Architectural Decisions, decision
+8. No regulatory retention floor applies (confirmed), so this is an operational default: Run
+and WorkItem retained 90 days after a terminal state, except `Abandoned` Runs and Failed-poison
+WorkItems retained 1 year for incident investigation; Outbox retained 1 year regardless of
+outcome, as the closest thing Commander keeps to an actual delivery record. `ProcessedInboundMessage`
+retention remains separately tracked as #14 (needs the real queue backout config, not a default).
 
 **The gap:** Nothing bounds how long `Run`, `WorkItem`, or `Outbox` rows live. The pipeline
 document says the outbox holds "one row per fingerprint, **ever**." At up to 10,000
