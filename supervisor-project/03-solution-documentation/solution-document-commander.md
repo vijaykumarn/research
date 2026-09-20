@@ -52,6 +52,8 @@ Commander is made up of three sub-components.
 
 11. **The on-demand path defends against a `NEVER`-marked (PHT-only) configuration appearing in its request, with a skip-and-log check.** The on-demand path takes an explicit list of configuration ids and doesn't filter by frequency, so a mistaken inclusion is possible even though the product guarantee is that it shouldn't happen. Rather than trust that guarantee alone, or fail the whole request over one bad id, Commander checks each supplied configuration's frequency: a `NEVER` configuration is skipped and logged against the Run, and the rest of the request proceeds normally.
 
+12. **`ProcessedInboundMessage` rows are retained for 24 hours.** This needs to exceed the worst-case time a legitimate redelivery could still arrive — a row purged before that window closes would be treated as a new message and reprocessed, silently reopening the exact duplicate-processing risk this table exists to close. 24 hours is a provisional estimate (up to 5 redelivery attempts, each potentially requiring a replacement pod to reconnect, at roughly 5-10 minutes per restart) pending confirmation against the actual backout-threshold and redelivery configuration on the on-demand and PHT queues, and should be revisited once that's known.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).

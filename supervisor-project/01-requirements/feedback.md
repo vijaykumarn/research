@@ -360,7 +360,13 @@ Architectural Decisions, once that section is built).
 
 ---
 
-## 14. [ ] `ProcessedInboundMessage` retention, unresolved
+## 14. [x] `ProcessedInboundMessage` retention — RESOLVED (provisionally) 2026-09-20
+
+**Resolution:** Added as `solution-document-commander.md`, 1.4 Architectural Decisions,
+decision 12 — 24 hours, based on a provisional estimate (5 redelivery attempts × ~5-10 min pod
+restart each) rather than the real queue config, which isn't known yet. Explicitly flagged in
+the document as provisional and to be revisited once the actual backout-threshold and
+redelivery configuration on the on-demand and PHT queues is confirmed.
 
 **The gap:** How long to keep `ProcessedInboundMessage` rows isn't decided. It needs to be read
 off the actual backout/redelivery-limit configuration on the on-demand and PHT queues, not
