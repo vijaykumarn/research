@@ -209,16 +209,21 @@ prematurely.
 
 ---
 
-## 9. [ ] Recipient identity resolution — smaller, may belong elsewhere
+## 9. [x] Recipient identity resolution — RESOLVED (placement) 2026-09-20
 
-**The gap:** How a `ReportConfig` resolves to the actual recipient identity (type, value, name)
-that goes into the message isn't addressed anywhere yet.
+**Resolution:** `commander-data-retrieval.md` now exists and establishes where and how this
+happens: every configuration resolves to exactly one recipient, and recipients are resolved in
+the same batched way as everything else — the distinct recipient ids across a whole page are
+looked up in one read, not one lookup per configuration (Section 2, "The recipient"). This
+closes the original gap ("not specified where it happens").
 
-**Why it matters:** Every message needs this; it's currently just not specified where it
-happens.
+**Still open:** the exact recipient field contract (type, value, name — the specific columns
+carried into the request) is Implementation Reference-level detail, deliberately deferred along
+with the rest of that document's Section 7, same phased approach used for
+`commander-scheduling.md`. Revisit once that section is built.
 
-**Affected documents:** Most likely belongs in `03-commander-data-retrieval.txt`, not yet
-drafted — flag it there rather than treating it as a gap in the two existing documents.
+**Affected documents:** `commander-data-retrieval.md`, Section 2 (placement) and Section 7,
+not yet built (field contract).
 
 ---
 
