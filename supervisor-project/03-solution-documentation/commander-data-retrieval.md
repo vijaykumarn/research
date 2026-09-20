@@ -148,6 +148,146 @@ flowchart LR
 
 ## 7. Implementation Reference
 
-<!-- Deferred, same phased approach used for commander-scheduling.md: build out Section 1-6
-     first, review, then add exact SQL, TVP details, the ResolvedConfig record shape, and
-     configuration defaults here. Source: 02-design/data-retrieval/solution_v02.md. -->
+This section is the implementation-level companion to the rest of this document — the exact query shapes, the schema addition, and the configuration defaults that the earlier sections leave out on purpose to stay readable. The earlier sections are the ones to trust for design and reasoning; come here when building or reviewing the code. Nothing here should ever contradict them — if it does, they are the ones to fix.
+
+### 7.1 The staged reads
+
+Level 1 has three variants, one per caller:
+
+```sql
+-- Scheduled: keyset pagination on the surrogate id, stable under concurrent writes
+WHERE ReportType = ? AND ReportFrequency = ? AND IsActive = 1
+  AND Id > :lastSeenId ORDER BY Id FETCH NEXT :pageSize
+
+-- On-demand: business key, no paging (tens of ids, not thousands)
+WHERE ConfigId IN (:configIds) AND IsActive = 1
+
+-- Recovery: surrogate ids from WorkItem rows, deliberately no active filter
+WHERE Id IN (:ids)
+```
+
+The scheduled variant's keyset pagination, rather than an offset, keeps every page an equally cheap index range scan and stays stable while configurations are being written concurrently underneath it — a row inserted behind the cursor is simply never seen by that run. The recovery variant deliberately omits the active filter, so it can see a configuration that's since gone inactive rather than silently skipping past it (2, above).
+
+Levels 2 through 6 are identical regardless of which Level 1 variant produced the configuration ids:
+
+```sql
+-- Level 2: scopes — bounded by page size, a plain IN is safe
+SELECT ... FROM ReportAgreementScope JOIN AgreementScope
+WHERE ReportConfigId IN (:configIds)
+
+-- Levels 3-5: payment types, accounts, aliases — can fan out past a plain
+-- IN's parameter limit, so the id set is bound as a table-valued parameter
+SELECT ... FROM PaymentTypeAssignment pta
+JOIN @ids i ON i.Id = pta.AgreementScopeId
+OPTION (RECOMPILE)
+
+-- Level 6: recipients — distinct ids across the page, a plain IN is safe
+SELECT ... FROM Recipient WHERE Id IN (:distinctRecipientIds)
+```
+
+### 7.2 Why the fan-out reads use a table-valued parameter, with `OPTION (RECOMPILE)`
+
+A page of 500 configurations can produce several thousand scope ids, and more assignment ids under them — past SQL Server's roughly 2,100-parameter cap on a plain `IN` list. Binding the id set as a table-valued parameter (TVP) sidesteps that cap entirely.
+
+SQL Server estimates a TVP at one row unless the statement is recompiled with the actual value in hand — a TVP that really holds 3,000 ids, planned as if it held one, tends toward a nested-loop plan that degrades badly at volume. `OPTION (RECOMPILE)` lets the optimizer see the real row count. These queries run only a handful of times per page, not thousands, so the per-statement recompile cost is cheap insurance.
+
+This fixes the row *count* the optimizer sees, not value-distribution statistics — a TVP carries no histogram. That doesn't matter for these particular queries (a straight join on an id list, no second selective predicate), but would start to matter if a future query added another filtering predicate alongside the join — at that point, materializing the ids into a temp table with a primary key becomes the better tool.
+
+### 7.3 Required indexes
+
+The "cost scales with pages, not configurations" property depends on these already existing on the schema — not something this layer adds:
+
+| Query | Needs |
+|---|---|
+| Scheduled config page | Composite index on (report type, frequency, active flag, id) |
+| On-demand config lookup | Index on the business-facing config id |
+| Scopes | Index on the scope table's foreign key to its configuration |
+| Payment types | Index on the payment-type table's foreign key to its scope |
+| Accounts / aliases | Index on each table's foreign key to its payment-type assignment |
+| Recipients | Primary key lookup |
+| Inbound-push recipient resolution | Indexes supporting the engagement-identifier → active agreement version → scope lookup |
+
+Missing indexes are a migration prerequisite to verify before build, not a gap this layer's own design has to solve.
+
+### 7.4 The pure assembler and its output shape
+
+A single, dependency-free function takes the six levels' flat rows and produces one resolved structure per configuration:
+
+```
+assemble(configs, scopes, paymentTypes, accounts, aliases, recipients) -> List<ResolvedConfig>
+```
+
+It groups each level's rows by parent id into maps, then builds each configuration's tree top-down. A configuration with no scope simply has no entry in the scope map, producing an empty tree rather than a special case. No database access, no framework context — testable with hand-built row fixtures alone.
+
+The output is an explicit, fully-typed structure, not a loose property map — every configuration column is its own named field, since the eventual request needs to carry each one individually, and a stringly-typed map would push untyped access through every downstream step that touches it. Both the configuration's internal identity and its business-facing configuration id are carried on the output, since the scheduled path pages by the former and an on-demand caller addresses configurations by the latter.
+
+### 7.5 Page-width guards
+
+Two independent limits, both configurable:
+
+- **Per-configuration account ceiling** — a configuration that resolves to more accounts than this is treated as bad data: logged, alerted, and handed back as a failed item, not built and not silently truncated.
+- **A hard cap on the total rows accumulated for one page** — independent of the per-configuration ceiling, protects the pod even if that ceiling is set generously; read with a running total, aborting with a clear error if the cap is crossed.
+
+A related guard sits in the assembler itself: if a payment-type assignment somehow carries both accounts and aliases — which should never happen — that one configuration is isolated as bad data rather than failing the whole page. A single occurrence is almost certainly bad source data; a high rate of it across a page or run is more likely a bug in the reads themselves, worth alerting on louder than an ordinary case.
+
+### 7.6 Recovery, step by step
+
+1. Group the requested pieces of work by their configuration.
+2. Run the recovery Level 1 query (no active filter) for the distinct configuration ids, then Levels 2 through 6 for whichever configurations came back.
+3. Per configuration: if the row wasn't returned at all, or came back inactive, every piece of work under it is confirmed absent — logged with which of the two reasons applied, since that's useful for observability even though the outcome handed back is the same either way. If the configuration is active, each piece of work's identity is looked up in the freshly-resolved tree: present is found, with the current data; absent is confirmed absent.
+4. If a level query throws for a batch, every piece of work for every configuration in that batch is query failed; other batches are unaffected, since the reads are staged per batch.
+
+New pieces of work that would exist today but didn't exist at the time of the original attempt are never surfaced here — recovery only ever answers for identities it was actually asked about.
+
+### 7.7 The inbound account balance push's balance merge
+
+A pure, in-memory function, not a database call:
+
+```
+mergeBalances(ResolvedConfig, Map<AccountKey, Balance>) -> ResolvedConfig
+    AccountKey = (clearingNumber, accountNumber)
+```
+
+Each resolved account is looked up in the balance map: a match carries the pushed balance forward; an account the push didn't cover is dropped from the result. Balances with no matching resolved account are ignored. Aliases are untouched.
+
+### 7.8 The one schema addition
+
+Resolving a page's worth of ids in a single batched read, rather than one query per configuration or a plain `IN` list past its parameter cap, needs one general-purpose table type added to the schema — reused at every fan-out level and by recovery. Not report-specific: one type, one migration.
+
+If adding any new schema object is genuinely disallowed, the fallback is chunking id sets into smaller batches and issuing multiple queries per level, merging the results in the adapter — this trades the flat six-reads-per-page cost for a variable count that grows exactly on the widest pages, working against the whole design's cost goal. Confirm which path applies before build.
+
+### 7.9 Hexagonal placement
+
+| Piece | Layer |
+|---|---|
+| The fresh-resolution and recovery entry points, and the recipient lookup | application (ports) |
+| The staged SQL, keyset paging, TVP binding, row mapping | adapter |
+| The assembler, the balance merge, the resolved-structure types, the piece-of-work identity format | domain (pure) |
+
+The adapter's only database-specific dependency is for TVP binding; everything else is plain, ordinary JDBC-style access.
+
+### 7.10 Configuration
+
+| Property | Purpose |
+|---|---|
+| Page size | Keyset page size — balances memory (one page's resolved trees held at once) against round-trip count and recovery granularity |
+| Fan-out query timeout | Timeout specifically on the TVP-bound reads |
+| Plain-`IN` guard ceiling | Fail-fast limit for the two plain-`IN` queries (scopes, recovery's config lookup), so an oversized batch fails fast rather than being sent as one giant list |
+| Per-configuration account ceiling | Above this, a configuration is treated as bad data rather than built |
+| Page row hard limit | Hard heap-safety cap on total account/alias rows accumulated for one page |
+
+This layer uses its own database connection pool and timeout settings, separate from anything shared with other repositories.
+
+### 7.11 Edge cases
+
+- A configuration matching no active rows at all (deleted, or never had any) simply produces no entry in the resolved output — not an error.
+- `NEVER`-frequency configurations are excluded structurally by the scheduled path's own selection query — nothing has to filter them out afterward.
+- An on-demand caller supplying a configuration id that doesn't exist, or is inactive, simply doesn't appear in the resolved output either — the same "not found" shape as any other absence.
+
+### 7.12 Open items
+
+- Confirm the one schema addition (7.8) is acceptable.
+- Verify the required indexes (7.3) actually exist on the schema.
+- Sign off the piece-of-work identity format jointly with Assembly, since it also feeds Assembly's own duplicate-prevention keys.
+- Set the per-configuration account ceiling and the page row hard limit from real, measured data — the current defaults are illustrative.
+- Confirm whether recovery ever needs refreshed recipient data, or only the account/alias leaves — if only leaves, recovery could skip that read entirely.
