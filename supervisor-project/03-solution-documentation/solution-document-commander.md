@@ -50,6 +50,8 @@ Commander is made up of three sub-components.
 
 10. **New fields are additive-only; Executor ignores fields it doesn't recognize rather than failing on them.** Existing fields are never renamed or removed. This lets Commander add new information to the payload at any time without requiring a simultaneous Executor deploy — Executor keeps working unaffected until it's updated to actually use the new field. A genuinely breaking change (removing or restructuring an existing field) is handled as a new report type, not an in-place change to an existing one — kept rare by design, not the normal evolution path.
 
+11. **The on-demand path defends against a `NEVER`-marked (PHT-only) configuration appearing in its request, with a skip-and-log check.** The on-demand path takes an explicit list of configuration ids and doesn't filter by frequency, so a mistaken inclusion is possible even though the product guarantee is that it shouldn't happen. Rather than trust that guarantee alone, or fail the whole request over one bad id, Commander checks each supplied configuration's frequency: a `NEVER` configuration is skipped and logged against the Run, and the rest of the request proceeds normally.
+
 ## 1.5 Assumptions and Pre-Requisites
 
 - Executor, the downstream application that consumes Commander's published requests, deduplicates on each request's identity (trigger type, configuration, report type, scope, window, and execution id) — necessary because delivery from Commander is at-least-once, not exactly-once (see 1.6, Delivery).
@@ -160,7 +162,7 @@ On-demand:
 
 1. A message arrives on the on-demand queue, carrying a list of configuration ids.
 2. The pod that picks it up mints a fresh identity for this request — nothing is supplied by the caller.
-3. It creates a Run and runs the same resolve-build-outbox-done loop as the scheduled path, for just those configurations.
+3. It creates a Run and runs the same resolve-build-outbox-done loop as the scheduled path, for those configurations — except any supplied id marked `NEVER` (PHT-only), which is skipped and logged against the Run instead (1.4, decision 11), rather than processed or failing the whole request.
 4. It records the incoming message's id as handled and acknowledges the queue.
 
 Inbound account balance push:

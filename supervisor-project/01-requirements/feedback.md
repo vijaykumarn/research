@@ -80,7 +80,7 @@ open item pointing at Section 2 once the table schemas are documented there).
 
 ---
 
-## 4. [ ] Secrets / credential management
+## 4. [ ] Secrets / credential management — user handling directly, not blocked (2026-09-20)
 
 **The gap:** Zero mentions of how DB or MQ credentials are handled, anywhere.
 
@@ -334,7 +334,13 @@ concept" becomes easy to enforce.
 
 ---
 
-## 13. [ ] On-demand guard against a PHT-only config, unresolved
+## 13. [x] On-demand guard against a PHT-only config — RESOLVED 2026-09-20
+
+**Resolution:** Decided: defend inside Commander, not just at the source. Added as
+`solution-document-commander.md`, 1.4 Architectural Decisions, decision 11 — a `NEVER`
+(PHT-only) configuration supplied to the on-demand path is skipped and logged against the Run
+rather than processed or failing the whole request. Reflected in the On-demand workflow steps
+(1.7, Assembly A, step 3).
 
 **The gap:** The on-demand path accepts an explicit list of configuration ids and does not
 filter by frequency. A config marked `NEVER` (the PHT-only marker) could in principle be
