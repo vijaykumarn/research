@@ -93,7 +93,7 @@ Scheduling's full architecture — startup sequence, the window-calculation func
 ### Delivery
 
 - **The drain loop** — a loop every pod runs at once, continuously draining finished requests from the outbox onto the real outbound queue. A claim on each row stops two pods sending the same one twice.
-- **Publish-failure handling** — retries with backoff and jitter; if the queue itself is unreachable, the row simply stays PENDING and is picked up again on the next pass. A request that fails specifically at delivery, rather than the queue being unreachable, is handled through dead-letter recovery.
+- **Publish-failure handling** — retries with backoff and jitter (exponential backoff plus jitter, a small amount of randomness added to each wait time, so retries from many pods don't all land at the same instant); if the queue itself is unreachable, the row simply stays PENDING and is picked up again on the next pass. A request that fails specifically at delivery, rather than the queue being unreachable, is handled through dead-letter recovery.
 - **Delivery is at-least-once, not exactly-once.** A row can be sent successfully and then redelivered if the pod that sent it dies before marking it done — sending and marking done aren't one atomic step. Every request carries its own fingerprint, and Executor is expected to dedupe on it (see 1.5, Assumptions).
 
 An Outbox row ends in one of three states:
